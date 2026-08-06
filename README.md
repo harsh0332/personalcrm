@@ -1,18 +1,24 @@
 # CallDesk
 
-CallDesk is a mobile-first personal cold calling CRM built with Next.js App Router, TypeScript, and Tailwind CSS. It is designed to work lead lists produced by a scraper (`leads-magnet`).
+CallDesk is a mobile-first personal cold calling CRM built with Next.js App Router, TypeScript, Tailwind CSS, and Supabase.
 
-## Features (Phase 0)
+## Environment Setup
 
-- Mobile-first shell with safe-area padding for iPhone home indicator.
-- 4 bottom navigation tabs: **Today**, **Leads**, **Import**, **Stats**.
-- Minimum 44px tap targets and 16px font sizing to prevent iOS input auto-zoom.
-- Portable, clean architecture ready for Vercel deployment.
+Create a `.env.local` file in the project root with the following keys (never commit this file):
 
-## Prerequisites
+```env
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 
-- Node.js 18.x or later
-- npm / pnpm / yarn
+# Authentication Allowlist (Single-user restriction)
+ALLOWED_EMAIL=your-email@example.com
+```
+
+## Features & Progress
+
+- **Phase 0**: Scaffolding, 4-tab mobile shell, dark theme.
+- **Phase 1**: Database schema (`leads`, `activities`, `followups`, `imports`, `dispositions`), RLS policies, unique `(owner, cid)` deduplication, and single-user magic link auth allowlist.
 
 ## Local Development
 
@@ -26,11 +32,18 @@ CallDesk is a mobile-first personal cold calling CRM built with Next.js App Rout
    npm run dev
    ```
 
-3. Open [http://localhost:3000](http://localhost:3000) in your browser (use mobile viewport mode, e.g. 375px width).
+3. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Database Migrations
+
+Database migrations are managed via Supabase CLI and committed in `supabase/migrations/`.
+
+To create a new migration:
+```bash
+npx supabase migration new <migration_name>
+```
 
 ## Production Build & Verification
-
-To verify the production build locally:
 
 ```bash
 npm run build
@@ -39,14 +52,8 @@ npm run start
 
 ## Deployment
 
-### Vercel Deployment
-
-1. Push your repository to GitHub / GitLab / Bitbucket.
-2. Import the repository into your Vercel Dashboard.
-3. Keep default settings (Framework Preset: Next.js).
-4. Deploy!
-
-Alternatively, deploy directly using Vercel CLI:
+Deploy to Vercel:
 ```bash
-npx vercel
+vercel --prod
 ```
+Ensure `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `ALLOWED_EMAIL` environment variables are added in your Vercel Project Settings.

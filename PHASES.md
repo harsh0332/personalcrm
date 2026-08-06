@@ -1,7 +1,7 @@
 # CallDesk Development Phases
 
 0 scaffold [x]
-1 schema and auth
+1 schema and auth [x]
 2 import
 3 lead list
 4 call screen

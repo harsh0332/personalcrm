@@ -15,6 +15,8 @@ const tabs = [
 export function BottomTabBar() {
   const pathname = usePathname();
 
+  if (pathname === "/login") return null;
+
   return (
     <nav
       aria-label="Main Navigation"
