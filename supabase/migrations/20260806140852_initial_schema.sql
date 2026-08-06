@@ -31,7 +31,22 @@ CREATE TABLE IF NOT EXISTS public.leads (
     CONSTRAINT leads_owner_cid_key UNIQUE (owner, cid)
 );
 
--- 2. Create activities table (append-only history)
+-- Trigger to automatically update updated_at timestamp on leads
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS set_leads_updated_at ON public.leads;
+CREATE TRIGGER set_leads_updated_at
+    BEFORE UPDATE ON public.leads
+    FOR EACH ROW
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+-- 2. Create activities table (strict append-only log)
 CREATE TABLE IF NOT EXISTS public.activities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     lead_id UUID NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
@@ -98,22 +113,11 @@ ON CONFLICT (code) DO UPDATE SET
     sets_dnc = EXCLUDED.sets_dnc;
 
 -- 6. Indexes for query optimization
--- Serves querying upcoming call queue ordered by scheduled action time
 CREATE INDEX IF NOT EXISTS idx_leads_owner_next_action_at ON public.leads (owner, next_action_at);
-
--- Serves filtering leads by stage (e.g., 'new', 'interested', 'won', 'lost')
 CREATE INDEX IF NOT EXISTS idx_leads_owner_status ON public.leads (owner, status);
-
--- Serves sorting and filtering lead list queues by priority tier
 CREATE INDEX IF NOT EXISTS idx_leads_owner_tier ON public.leads (owner, tier);
-
--- Serves filtering lead list queues by target geographic territory/area
 CREATE INDEX IF NOT EXISTS idx_leads_owner_area ON public.leads (owner, area);
-
--- Serves fetching activity history for a specific lead chronologically
 CREATE INDEX IF NOT EXISTS idx_activities_owner_lead_occurred ON public.activities (owner, lead_id, occurred_at DESC);
-
--- Serves querying scheduled follow-up reminders due for current user
 CREATE INDEX IF NOT EXISTS idx_followups_owner_due_at ON public.followups (owner, due_at);
 
 -- 7. Enable Row Level Security (RLS) on all tables
@@ -136,11 +140,16 @@ CREATE POLICY "Users can manage own leads"
     USING (auth.uid() = owner)
     WITH CHECK (auth.uid() = owner);
 
--- Activities: Accessible only by owner
-CREATE POLICY "Users can manage own activities"
-    ON public.activities
-    USING (auth.uid() = owner)
+-- Activities: APPEND-ONLY discipline (SELECT and INSERT only, NO UPDATE or DELETE)
+CREATE POLICY "Users can select own activities"
+    ON public.activities FOR SELECT
+    USING (auth.uid() = owner);
+
+CREATE POLICY "Users can insert own activities"
+    ON public.activities FOR INSERT
     WITH CHECK (auth.uid() = owner);
+
+REVOKE UPDATE, DELETE ON public.activities FROM authenticated, anon, public;
 
 -- Followups: Accessible only by owner
 CREATE POLICY "Users can manage own followups"

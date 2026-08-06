@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { Mail, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -19,44 +18,30 @@ export default function LoginPage() {
     setMessage(null);
 
     try {
-      // Validate allowlist on server side first via an API action check
-      const res = await fetch("/api/auth/check-email", {
+      // Send magic link request to server endpoint only
+      const res = await fetch("/api/auth/sign-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
 
-      const check = await res.json();
-      if (!res.ok || !check.allowed) {
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
         setMessage({
           type: "error",
-          text: check.error || "Access denied. Email is not on the authorized allowlist.",
+          text: data.error || "Failed to send magic link.",
         });
-        setLoading(false);
-        return;
-      }
-
-      // If email is allowed, send magic link via Supabase Auth
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) {
-        setMessage({ type: "error", text: error.message });
       } else {
         setMessage({
           type: "success",
-          text: "Magic link sent! Check your email inbox to sign in.",
+          text: data.message || "Magic link sent! Check your email inbox to sign in.",
         });
       }
     } catch {
       setMessage({
         type: "error",
-        text: "An unexpected error occurred. Please try again.",
+        text: "An unexpected network error occurred. Please try again.",
       });
     } finally {
       setLoading(false);
@@ -131,7 +116,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-xs text-center text-zinc-500">
-          Single-user access protected by email allowlist enforcement.
+          Single-user access protected by server-side email allowlist enforcement.
         </p>
       </div>
     </main>
