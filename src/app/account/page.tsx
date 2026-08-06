@@ -1,28 +1,74 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { LogOut, User, ShieldCheck, PhoneCall, Mail } from "lucide-react";
+import {
+  LogOut,
+  User,
+  ShieldCheck,
+  PhoneCall,
+  Mail,
+  Download,
+  Database,
+  Filter,
+  FileSpreadsheet,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+function downloadCsv(filename: string, csvContent: string) {
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function escapeCsvCell(cell: any): string {
+  if (cell === null || cell === undefined) return '""';
+  const str = String(cell).replace(/"/g, '""');
+  return `"${str}"`;
+}
 
 export default function AccountPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [signingOut, setSigningOut] = useState<boolean>(false);
+
+  // Export State
+  const [campaigns, setCampaigns] = useState<string[]>([]);
+  const [exportCampaign, setExportCampaign] = useState<string>("all");
+  const [exportDateRange, setExportDateRange] = useState<string>("all");
+
+  const [outcomesCount, setOutcomesCount] = useState<number | null>(null);
+  const [preparingOutcomes, setPreparingOutcomes] = useState<boolean>(false);
+  const [preparingBackup, setPreparingBackup] = useState<boolean>(false);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
     async function loadUser() {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+
         if (error || !user) {
           router.replace("/login?message=expired");
           return;
         }
         setUserEmail(user.email || "Unknown User");
-      } catch (err) {
+      } catch {
         router.replace("/login?message=expired");
       } finally {
         setLoading(false);
@@ -31,17 +77,251 @@ export default function AccountPage() {
     loadUser();
   }, [router, supabase]);
 
+  // Load distinct campaigns
+  useEffect(() => {
+    async function loadCampaigns() {
+      const { data } = await supabase
+        .from("leads")
+        .select("campaign")
+        .not("campaign", "is", null);
+
+      if (data) {
+        const unique = Array.from(new Set(data.map((r: any) => r.campaign).filter(Boolean))) as string[];
+        setCampaigns(unique);
+      }
+    }
+    loadCampaigns();
+  }, [supabase]);
+
+  // Calculate outcomes count when filters change
+  const calculateOutcomesCount = useCallback(async () => {
+    try {
+      let query = supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .or("attempts.gt.0,status.neq.new");
+
+      if (exportCampaign !== "all") {
+        query = query.eq("campaign", exportCampaign);
+      }
+
+      if (exportDateRange !== "all") {
+        const now = new Date();
+        let days = 0;
+        if (exportDateRange === "today") days = 1;
+        if (exportDateRange === "7d") days = 7;
+        if (exportDateRange === "30d") days = 30;
+
+        const cutoff = new Date(now.getTime() - days * 24 * 3600 * 1000).toISOString();
+        query = query.gte("last_called_at", cutoff);
+      }
+
+      const { count } = await query;
+      setOutcomesCount(count || 0);
+    } catch {
+      setOutcomesCount(0);
+    }
+  }, [supabase, exportCampaign, exportDateRange]);
+
+  useEffect(() => {
+    calculateOutcomesCount();
+  }, [calculateOutcomesCount]);
+
+  // 1. EXPORT OUTCOMES BACK TO SCRAPER (LEADS-MAGNET)
+  const handleExportOutcomes = async () => {
+    setPreparingOutcomes(true);
+    setExportMsg(null);
+
+    try {
+      let query = supabase
+        .from("leads")
+        .select("id, cid, name, phone, campaign, status, attempts, last_called_at")
+        .or("attempts.gt.0,status.neq.new");
+
+      if (exportCampaign !== "all") {
+        query = query.eq("campaign", exportCampaign);
+      }
+
+      if (exportDateRange !== "all") {
+        const now = new Date();
+        let days = 0;
+        if (exportDateRange === "today") days = 1;
+        if (exportDateRange === "7d") days = 7;
+        if (exportDateRange === "30d") days = 30;
+
+        const cutoff = new Date(now.getTime() - days * 24 * 3600 * 1000).toISOString();
+        query = query.gte("last_called_at", cutoff);
+      }
+
+      const { data: leadsData, error: leadErr } = await query.order("last_called_at", { ascending: false });
+
+      if (leadErr) throw leadErr;
+
+      if (!leadsData || leadsData.length === 0) {
+        setExportMsg("No leads match outcome export criteria (0 rows to export).");
+        setPreparingOutcomes(false);
+        return;
+      }
+
+      // Fetch most recent call activity per lead
+      const leadIds = leadsData.map((l) => l.id);
+      const { data: activitiesData } = await supabase
+        .from("activities")
+        .select("lead_id, disposition, occurred_at")
+        .in("lead_id", leadIds)
+        .eq("kind", "call")
+        .order("occurred_at", { ascending: false });
+
+      const recentDispMap: Record<string, string> = {};
+      (activitiesData || []).forEach((act) => {
+        if (!recentDispMap[act.lead_id]) {
+          recentDispMap[act.lead_id] = act.disposition;
+        }
+      });
+
+      // Build CSV Content
+      const headers = [
+        "cid",
+        "name",
+        "phone",
+        "campaign",
+        "status",
+        "attempts",
+        "last_called_at",
+        "most_recent_disposition",
+      ];
+
+      const csvRows = [headers.join(",")];
+
+      leadsData.forEach((lead) => {
+        const row = [
+          escapeCsvCell(lead.cid),
+          escapeCsvCell(lead.name),
+          escapeCsvCell(lead.phone),
+          escapeCsvCell(lead.campaign || "Indore Dentists"),
+          escapeCsvCell(lead.status),
+          escapeCsvCell(lead.attempts),
+          escapeCsvCell(lead.last_called_at || ""),
+          escapeCsvCell(recentDispMap[lead.id] || lead.status),
+        ];
+        csvRows.push(row.join(","));
+      });
+
+      const filename = `calldesk_outcomes_${exportCampaign}_${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadCsv(filename, csvRows.join("\n"));
+      setExportMsg(`Successfully exported ${leadsData.length} outcome row(s)!`);
+    } catch (err: any) {
+      setExportMsg(`Export failed: ${err.message}`);
+    } finally {
+      setPreparingOutcomes(false);
+    }
+  };
+
+  // 2. EXPORT EVERYTHING (FULL BACKUP)
+  const handleExportBackup = async () => {
+    setPreparingBackup(true);
+    setExportMsg(null);
+
+    try {
+      const { data: allLeads, error: lErr } = await supabase.from("leads").select("*");
+      if (lErr) throw lErr;
+
+      const { data: allActivities, error: aErr } = await supabase.from("activities").select("*");
+      if (aErr) throw aErr;
+
+      // 1. Leads Backup CSV
+      const leadHeaders = [
+        "id",
+        "cid",
+        "name",
+        "phone",
+        "campaign",
+        "status",
+        "attempts",
+        "tier",
+        "area",
+        "rating",
+        "review_count",
+        "gap_reasons",
+        "created_at",
+        "last_called_at",
+      ];
+      const leadCsvRows = [leadHeaders.join(",")];
+      (allLeads || []).forEach((l) => {
+        leadCsvRows.push(
+          [
+            escapeCsvCell(l.id),
+            escapeCsvCell(l.cid),
+            escapeCsvCell(l.name),
+            escapeCsvCell(l.phone),
+            escapeCsvCell(l.campaign || "Indore Dentists"),
+            escapeCsvCell(l.status),
+            escapeCsvCell(l.attempts),
+            escapeCsvCell(l.tier),
+            escapeCsvCell(l.area),
+            escapeCsvCell(l.rating),
+            escapeCsvCell(l.review_count),
+            escapeCsvCell(Array.isArray(l.gap_reasons) ? l.gap_reasons.join(";") : l.gap_reasons),
+            escapeCsvCell(l.created_at),
+            escapeCsvCell(l.last_called_at),
+          ].join(",")
+        );
+      });
+
+      const leadsFilename = `calldesk_full_leads_backup_${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadCsv(leadsFilename, leadCsvRows.join("\n"));
+
+      // 2. Activities Backup CSV
+      const actHeaders = [
+        "id",
+        "lead_id",
+        "kind",
+        "disposition",
+        "duration_sec",
+        "note",
+        "occurred_at",
+        "performed_by",
+      ];
+      const actCsvRows = [actHeaders.join(",")];
+      (allActivities || []).forEach((a) => {
+        actCsvRows.push(
+          [
+            escapeCsvCell(a.id),
+            escapeCsvCell(a.lead_id),
+            escapeCsvCell(a.kind),
+            escapeCsvCell(a.disposition),
+            escapeCsvCell(a.duration_sec),
+            escapeCsvCell(a.note),
+            escapeCsvCell(a.occurred_at),
+            escapeCsvCell(a.performed_by),
+          ].join(",")
+        );
+      });
+
+      const actsFilename = `calldesk_full_activities_backup_${new Date().toISOString().slice(0, 10)}.csv`;
+      setTimeout(() => {
+        downloadCsv(actsFilename, actCsvRows.join("\n"));
+      }, 500);
+
+      setExportMsg(
+        `Full Backup Triggered! Downloaded ${allLeads?.length || 0} leads and ${allActivities?.length || 0} activity logs.`
+      );
+    } catch (err: any) {
+      setExportMsg(`Backup failed: ${err.message}`);
+    } finally {
+      setPreparingBackup(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
       await supabase.auth.signOut();
-      // Clear any cached local storage or state
       if (typeof window !== "undefined") {
         window.localStorage.clear();
         window.sessionStorage.clear();
       }
       router.replace("/login");
-      // Force reload to prevent browser back-button cached state restoration
       setTimeout(() => {
         window.location.href = "/login";
       }, 100);
@@ -53,12 +333,12 @@ export default function AccountPage() {
   };
 
   return (
-    <main className="flex-1 flex flex-col min-h-screen bg-zinc-950 p-4 pb-24 text-zinc-100 max-w-md mx-auto w-full">
+    <main className="flex-1 flex flex-col min-h-screen bg-zinc-950 p-4 pb-24 text-zinc-100 max-w-md mx-auto w-full font-sans space-y-6">
       {/* HEADER */}
-      <div className="border-b border-zinc-800 pb-3 mb-6">
+      <div className="border-b border-zinc-800 pb-3">
         <div className="flex items-center space-x-2">
           <User className="w-5 h-5 text-emerald-400" />
-          <h1 className="text-lg font-bold text-zinc-50">Account & Profile</h1>
+          <h1 className="text-lg font-bold text-zinc-50">Account & Export</h1>
         </div>
       </div>
 
@@ -100,6 +380,113 @@ export default function AccountPage() {
             </div>
           </div>
 
+          {/* ------------------------------------------------------------- */}
+          {/* EXPORT DATA SECTION (LEADS-MAGNET FEEDBACK LOOP)              */}
+          {/* ------------------------------------------------------------- */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-4 shadow-lg">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                <FileSpreadsheet className="w-4 h-4" /> Export Back to Scraper
+              </h2>
+              <span className="text-[10px] text-zinc-500 font-mono">CSV Export</span>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Export call outcomes so your scraper (<code className="text-emerald-400">leads-magnet</code>) skips contacted businesses next month.
+            </p>
+
+            {exportMsg && (
+              <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl text-xs flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed text-zinc-200">{exportMsg}</span>
+              </div>
+            )}
+
+            {/* EXPORT OUTCOMES FILTERS & ROW COUNT */}
+            <div className="space-y-3 p-3 bg-zinc-950 rounded-xl border border-zinc-800/80 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-zinc-500 font-medium uppercase block mb-1">
+                    Campaign Filter
+                  </label>
+                  <select
+                    value={exportCampaign}
+                    onChange={(e) => setExportCampaign(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs rounded px-2 py-1.5 focus:outline-none"
+                  >
+                    <option value="all">All Campaigns</option>
+                    {campaigns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-zinc-500 font-medium uppercase block mb-1">
+                    Date Range Filter
+                  </label>
+                  <select
+                    value={exportDateRange}
+                    onChange={(e) => setExportDateRange(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs rounded px-2 py-1.5 focus:outline-none"
+                  >
+                    <option value="all">All Time</option>
+                    <option value="today">Called Today</option>
+                    <option value="7d">Last 7 Days</option>
+                    <option value="30d">Last 30 Days</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row Count Badge */}
+              <div className="flex items-center justify-between pt-2 border-t border-zinc-900 font-mono text-[11px]">
+                <span className="text-zinc-400">Export Row Count:</span>
+                <span className="font-bold text-emerald-400">
+                  {outcomesCount === null ? "..." : `${outcomesCount} lead(s) with outcomes`}
+                </span>
+              </div>
+
+              <Button
+                onClick={handleExportOutcomes}
+                disabled={preparingOutcomes || outcomesCount === 0}
+                className="w-full h-10 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5"
+              >
+                {preparingOutcomes ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                <span>EXPORT OUTCOMES CSV ({outcomesCount || 0} Rows)</span>
+              </Button>
+            </div>
+
+            {/* FULL BACKUP BUTTON */}
+            <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+              <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-sky-400" /> Full CRM Data Backup
+                </span>
+                <span className="text-[10px] text-zinc-500 font-mono">Leads + Activities</span>
+              </div>
+
+              <Button
+                onClick={handleExportBackup}
+                disabled={preparingBackup}
+                variant="outline"
+                className="w-full h-10 border-zinc-800 bg-zinc-950 hover:bg-zinc-800 text-zinc-200 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5"
+              >
+                {preparingBackup ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 text-sky-400" />
+                )}
+                <span>EXPORT EVERYTHING (Full CSV Backup)</span>
+              </Button>
+            </div>
+          </div>
+
           {/* APPLICATION INFO */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-2">
             <div className="flex items-center space-x-2 text-xs font-bold text-zinc-300">
@@ -112,7 +499,7 @@ export default function AccountPage() {
           </div>
 
           {/* SIGN OUT BUTTON */}
-          <div className="pt-4">
+          <div className="pt-2">
             <Button
               onClick={handleSignOut}
               disabled={signingOut}

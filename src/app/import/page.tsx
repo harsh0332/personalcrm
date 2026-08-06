@@ -9,7 +9,6 @@ import {
   autoMapHeader,
   normalizePhone,
   detectGapReasonsSeparator,
-  parseGapReasons,
   parseGapReasonsDetailed,
   parseNullableInt,
   parseNullableFloat,
@@ -25,6 +24,7 @@ import {
   ChevronUp,
   Loader2,
   RefreshCw,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +43,12 @@ interface ImportRecord {
 export default function ImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [runIdInput, setRunIdInput] = useState<string>("");
+  
+  // Campaign Selection State
+  const [existingCampaigns, setExistingCampaigns] = useState<string[]>([]);
+  const [campaignChoice, setCampaignChoice] = useState<string>("Indore Dentists");
+  const [customCampaign, setCustomCampaign] = useState<string>("");
+
   const [rawHeaders, setRawHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, any>[]>([]);
   const [headerMapping, setHeaderMapping] = useState<Record<string, string>>({});
@@ -58,6 +64,7 @@ export default function ImportPage() {
     skippedRows: SkippedRowInfo[];
     unrecognizedReasons?: string[];
     logWarning?: string | null;
+    campaignName: string;
   } | null>(null);
 
   const [importError, setImportError] = useState<string | null>(null);
@@ -69,7 +76,27 @@ export default function ImportPage() {
 
   useEffect(() => {
     fetchRecentImports();
+    fetchCampaigns();
   }, []);
+
+  const fetchCampaigns = async () => {
+    try {
+      const { data } = await supabase
+        .from("leads")
+        .select("campaign")
+        .not("campaign", "is", null);
+
+      if (data) {
+        const unique = Array.from(new Set(data.map((r: any) => r.campaign).filter(Boolean))) as string[];
+        setExistingCampaigns(unique);
+        if (unique.length > 0) {
+          setCampaignChoice(unique[0]);
+        }
+      }
+    } catch {
+      // Ignored
+    }
+  };
 
   const fetchRecentImports = async () => {
     setLoadingHistory(true);
@@ -84,7 +111,7 @@ export default function ImportPage() {
         setRecentImports(data as ImportRecord[]);
       }
     } catch {
-      // Ignored in offline mode
+      // Ignored
     } finally {
       setLoadingHistory(false);
     }
@@ -100,6 +127,14 @@ export default function ImportPage() {
   const processFile = (fileToParse: File) => {
     setFile(fileToParse);
     setRunIdInput(fileToParse.name);
+    
+    // Auto derive campaign name from filename if not default
+    const nameWithoutExt = fileToParse.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+    if (nameWithoutExt && !existingCampaigns.includes(nameWithoutExt)) {
+      setCustomCampaign(nameWithoutExt);
+      setCampaignChoice("NEW_CUSTOM");
+    }
+
     setImportError(null);
 
     const ext = fileToParse.name.split(".").pop()?.toLowerCase();
@@ -160,7 +195,6 @@ export default function ImportPage() {
     });
     setHeaderMapping(initialMapping);
 
-    // Detect gap_reasons separator from sample rows
     let sampleGapReasons = "";
     const gapHeader = headers.find((h) => autoMapHeader(h) === "gap_reasons");
     if (gapHeader) {
@@ -182,7 +216,6 @@ export default function ImportPage() {
     }));
   };
 
-  // Required columns check: cid, name, phone
   const mappedTargets = Object.values(headerMapping);
   const isCidMapped = mappedTargets.includes("cid");
   const isNameMapped = mappedTargets.includes("name");
@@ -201,6 +234,16 @@ export default function ImportPage() {
       return;
     }
 
+    const finalCampaignName =
+      campaignChoice === "NEW_CUSTOM"
+        ? customCampaign.trim() || "Indore Dentists"
+        : campaignChoice;
+
+    if (!finalCampaignName) {
+      setImportError("Please provide a valid campaign name for this import batch.");
+      return;
+    }
+
     setStage("importing");
     setImportError(null);
 
@@ -213,10 +256,9 @@ export default function ImportPage() {
     let duplicatesInFileCount = 0;
     let skippedCount = 0;
     const skippedRowsList: SkippedRowInfo[] = [];
-    const validRecords: LeadInsertRecord[] = [];
+    const validRecords: (LeadInsertRecord & { campaign: string })[] = [];
     const seenCidsInFile = new Set<string>();
 
-    // 1. Row transforms, validation, and IN-FILE DEDUPLICATION (Part A)
     const unrecognizedReasonsSet = new Set<string>();
 
     rawRows.forEach((row, idx) => {
@@ -254,7 +296,6 @@ export default function ImportPage() {
         return;
       }
 
-      // Deduplicate within the file: keep 1st occurrence, count repeated as duplicatesInFile
       if (seenCidsInFile.has(cid)) {
         duplicatesInFileCount++;
         return;
@@ -301,10 +342,10 @@ export default function ImportPage() {
         tier,
         source_run_id,
         status: "new",
+        campaign: finalCampaignName,
       });
     });
 
-    // 2. Batch writing and exact insert count via ON CONFLICT DO NOTHING RETURNING select("cid") (Part B)
     const BATCH_SIZE = 100;
     const totalBatches = Math.ceil(validRecords.length / BATCH_SIZE);
 
@@ -341,13 +382,12 @@ export default function ImportPage() {
       }
     }
 
-    // 3. Write row to `imports` table and surface any failure visibly (Item 2)
     let logWarning: string | null = null;
 
     const importRecordPayload = {
       owner: ownerId,
       filename: file?.name || "leads.csv",
-      run_id: runIdInput.trim() || file?.name || "run_1",
+      run_id: `${finalCampaignName} (${runIdInput.trim() || file?.name || "run_1"})`,
       total_rows: rawRows.length,
       inserted: totalInserted,
       duplicates: totalAlreadyExisted,
@@ -374,10 +414,12 @@ export default function ImportPage() {
       skippedRows: skippedRowsList,
       unrecognizedReasons: Array.from(unrecognizedReasonsSet),
       logWarning,
+      campaignName: finalCampaignName,
     });
 
     setStage("summary");
     fetchRecentImports();
+    fetchCampaigns();
   };
 
   const handleReset = () => {
@@ -391,7 +433,7 @@ export default function ImportPage() {
   };
 
   return (
-    <main className="flex-1 p-4 max-w-md mx-auto w-full space-y-6">
+    <main className="flex-1 p-4 max-w-md mx-auto w-full space-y-6 font-sans">
       <div className="space-y-1 text-center border-b border-zinc-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Import Leads</h1>
         <p className="text-xs text-zinc-400">
@@ -437,10 +479,55 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* STAGE 2: MAPPING & PREVIEW */}
+      {/* STAGE 2: MAPPING & CAMPAIGN SELECTION */}
       {stage === "map" && (
         <div className="space-y-5">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+          {/* CAMPAIGN SELECTION BOX */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between text-xs text-zinc-300 font-bold border-b border-zinc-800 pb-2">
+              <span className="flex items-center gap-1.5 text-emerald-400">
+                <Layers className="w-4 h-4" /> Target Campaign Batch
+              </span>
+              <span className="text-[10px] text-zinc-500">Required</span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className="text-zinc-400 font-medium block">
+                Assign leads to Campaign:
+              </label>
+
+              <select
+                value={campaignChoice}
+                onChange={(e) => setCampaignChoice(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded text-xs text-emerald-300 font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                {existingCampaigns.map((c) => (
+                  <option key={c} value={c}>
+                    Existing Campaign: {c}
+                  </option>
+                ))}
+                <option value="NEW_CUSTOM">+ Create New Campaign...</option>
+              </select>
+
+              {campaignChoice === "NEW_CUSTOM" && (
+                <div className="pt-1 space-y-1">
+                  <label className="text-[11px] text-zinc-400 font-medium block">
+                    Type New Campaign Name:
+                  </label>
+                  <input
+                    type="text"
+                    value={customCampaign}
+                    onChange={(e) => setCustomCampaign(e.target.value)}
+                    placeholder="e.g. Indore Interior Designers"
+                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* FILE & RUN ID BOX */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
                 <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
@@ -450,7 +537,7 @@ export default function ImportPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-zinc-400 block">Source Run ID</label>
+              <label className="text-xs font-medium text-zinc-400 block">Source Run ID / File Note</label>
               <input
                 type="text"
                 value={runIdInput}
@@ -506,41 +593,6 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {/* FIRST 5 ROWS PREVIEW TABLE */}
-          <div className="space-y-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Parsed Data Preview (First 5 Rows)
-            </h2>
-            <div className="overflow-x-auto border border-zinc-800 rounded-lg bg-zinc-900">
-              <table className="w-full text-[11px] text-left text-zinc-300 whitespace-nowrap">
-                <thead className="bg-zinc-950 text-zinc-400 uppercase font-mono border-b border-zinc-800">
-                  <tr>
-                    <th className="p-2 border-r border-zinc-800">#</th>
-                    {rawHeaders.map((h) => (
-                      <th key={h} className="p-2 border-r border-zinc-800">
-                        {headerMapping[h] || h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/50">
-                  {rawRows.slice(0, 5).map((row, idx) => (
-                    <tr key={idx} className="hover:bg-zinc-800/30">
-                      <td className="p-2 border-r border-zinc-800 font-mono text-zinc-500">
-                        {idx + 1}
-                      </td>
-                      {rawHeaders.map((h) => (
-                        <td key={h} className="p-2 border-r border-zinc-800 max-w-[150px] truncate">
-                          {String(row[h] ?? "")}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           <div className="flex gap-2 pt-2">
             <Button
               variant="outline"
@@ -589,6 +641,22 @@ export default function ImportPage() {
               <CheckCircle2 className="w-5 h-5" />
               <h2 className="text-sm font-bold text-zinc-100">Import Session Complete</h2>
             </div>
+
+            <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-xs flex items-center justify-between">
+              <span className="text-zinc-400">Target Campaign:</span>
+              <span className="font-bold text-emerald-400 font-mono">{importSummary.campaignName}</span>
+            </div>
+
+            {importSummary.alreadyExisted > 0 && (
+              <div className="p-3 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-300 text-xs">
+                <span className="font-semibold block">
+                  ℹ️ {importSummary.alreadyExisted} lead(s) skipped — already in campaign.
+                </span>
+                <span className="text-[11px] text-amber-200/80 mt-0.5 block">
+                  Existing leads retain their original campaign assignment and call history.
+                </span>
+              </div>
+            )}
 
             {importSummary.logWarning && (
               <div className="p-3 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-300 text-xs flex items-start space-x-2">
@@ -667,34 +735,6 @@ export default function ImportPage() {
                 (Matches Total File Rows: {importSummary.totalRows})
               </div>
             </div>
-
-            {importSummary.skipped > 0 && (
-              <div className="pt-2">
-                <button
-                  onClick={() => setShowSkippedDetails(!showSkippedDetails)}
-                  className="w-full flex items-center justify-between text-xs text-rose-400 hover:text-rose-300 py-1 font-medium"
-                >
-                  <span>View Skipped Rows ({importSummary.skipped})</span>
-                  {showSkippedDetails ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </button>
-
-                {showSkippedDetails && (
-                  <div className="mt-2 p-2 bg-zinc-950 border border-zinc-800 rounded-lg max-h-40 overflow-y-auto divide-y divide-zinc-900 text-[11px]">
-                    {importSummary.skippedRows.map((sr, idx) => (
-                      <div key={idx} className="py-1 flex justify-between gap-2">
-                        <span className="text-zinc-400 font-mono">Row {sr.rowIndex}</span>
-                        <span className="text-zinc-200 truncate">{sr.dataSnippet}</span>
-                        <span className="text-rose-400">{sr.reason}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           <Button
@@ -726,7 +766,7 @@ export default function ImportPage() {
             <thead className="bg-zinc-950 text-zinc-400 font-mono border-b border-zinc-800">
               <tr>
                 <th className="p-2 border-r border-zinc-800">File</th>
-                <th className="p-2 border-r border-zinc-800">Run ID</th>
+                <th className="p-2 border-r border-zinc-800">Campaign / Run</th>
                 <th className="p-2 border-r border-zinc-800">Total</th>
                 <th className="p-2 border-r border-zinc-800 text-emerald-400">Inserted</th>
                 <th className="p-2 border-r border-zinc-800 text-amber-400">Already Existed</th>
@@ -747,7 +787,7 @@ export default function ImportPage() {
                     <td className="p-2 border-r border-zinc-800 text-zinc-200 font-sans max-w-[100px] truncate">
                       {imp.filename}
                     </td>
-                    <td className="p-2 border-r border-zinc-800 text-zinc-400 max-w-[80px] truncate">
+                    <td className="p-2 border-r border-zinc-800 text-emerald-400 max-w-[100px] truncate">
                       {imp.run_id || "-"}
                     </td>
                     <td className="p-2 border-r border-zinc-800 text-zinc-300">

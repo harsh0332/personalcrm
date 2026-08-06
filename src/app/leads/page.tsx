@@ -12,6 +12,7 @@ import { Users, Upload, FilterX, Loader2, AlertTriangle, RefreshCw } from "lucid
 import Link from "next/link";
 
 const DEFAULT_FILTERS: FilterState = {
+  campaign: "",
   tier: "",
   status: "",
   area: "",
@@ -38,6 +39,7 @@ export default function LeadsPage() {
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
+  const [availableCampaigns, setAvailableCampaigns] = useState<string[]>([]);
   const [availableAreas, setAvailableAreas] = useState<{ value: string; count: number }[]>([]);
   const [availableCategories, setAvailableCategories] = useState<{ value: string; count: number }[]>([]);
   const [hiddenCount, setHiddenCount] = useState<number>(0);
@@ -49,20 +51,24 @@ export default function LeadsPage() {
     try {
       const { data: areaCatData } = await supabase
         .from("leads")
-        .select("area, category, do_not_call, status");
+        .select("area, category, do_not_call, status, campaign");
 
       if (areaCatData) {
         const aCounts: Record<string, number> = {};
         const cCounts: Record<string, number> = {};
+        const campSet = new Set<string>();
         let hiddenC = 0;
 
         areaCatData.forEach((row: any) => {
+          if (row.campaign) campSet.add(row.campaign);
           if (row.area) aCounts[row.area] = (aCounts[row.area] || 0) + 1;
           if (row.category) cCounts[row.category] = (cCounts[row.category] || 0) + 1;
           if (row.do_not_call || row.status === "lost" || row.status === "invalid") {
             hiddenC++;
           }
         });
+
+        setAvailableCampaigns(Array.from(campSet));
 
         setAvailableAreas(
           Object.entries(aCounts)
@@ -97,9 +103,14 @@ export default function LeadsPage() {
         let query = supabase
           .from("leads")
           .select(
-            "id, cid, name, phone, phone_e164, area, category, tier, rating, review_count, demand_score, status, do_not_call, area_source, attempts",
+            "id, cid, name, phone, phone_e164, area, category, tier, rating, review_count, demand_score, status, do_not_call, area_source, attempts, campaign",
             { count: "exact" }
           );
+
+        // Campaign Filter
+        if (filters.campaign) {
+          query = query.eq("campaign", filters.campaign);
+        }
 
         // a) Default Hidden Filter
         if (!filters.showHidden) {
@@ -241,6 +252,7 @@ export default function LeadsPage() {
         filters={filters}
         onFilterChange={setFilters}
         onClearFilters={() => setFilters(DEFAULT_FILTERS)}
+        availableCampaigns={availableCampaigns}
         availableAreas={availableAreas}
         availableCategories={availableCategories}
         hiddenCount={hiddenCount}

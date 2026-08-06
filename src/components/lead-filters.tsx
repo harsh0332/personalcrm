@@ -4,6 +4,7 @@ import { X, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface FilterState {
+  campaign: string;
   tier: string;
   status: string;
   area: string;
@@ -18,6 +19,7 @@ interface LeadFiltersProps {
   filters: FilterState;
   onFilterChange: (newFilters: FilterState) => void;
   onClearFilters: () => void;
+  availableCampaigns: string[];
   availableAreas: { value: string; count: number }[];
   availableCategories: { value: string; count: number }[];
   hiddenCount: number;
@@ -29,6 +31,7 @@ export function LeadFilters({
   filters,
   onFilterChange,
   onClearFilters,
+  availableCampaigns = [],
   availableAreas,
   availableCategories,
   hiddenCount,
@@ -36,6 +39,7 @@ export function LeadFilters({
   currentLoadedCount,
 }: LeadFiltersProps) {
   const isFiltered =
+    filters.campaign !== "" ||
     filters.tier !== "" ||
     filters.status !== "" ||
     filters.area !== "" ||
@@ -75,6 +79,24 @@ export function LeadFilters({
 
       {/* Filter Options Row */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
+        {/* Campaign Select (Shown only if > 1 distinct campaign exists) */}
+        {availableCampaigns.length > 1 && (
+          <select
+            value={filters.campaign}
+            onChange={(e) => handleChange("campaign", e.target.value)}
+            className={`bg-zinc-900 border text-xs rounded-lg px-2.5 py-1.5 focus:outline-none shrink-0 font-semibold ${
+              filters.campaign ? "border-emerald-500 text-emerald-300" : "border-zinc-800 text-emerald-400"
+            }`}
+          >
+            <option value="">All Campaigns ({availableCampaigns.length})</option>
+            {availableCampaigns.map((c) => (
+              <option key={c} value={c}>
+                Campaign: {c}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Sort By Select */}
         <select
           value={filters.sortBy}

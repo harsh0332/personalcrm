@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, Users, Upload, BarChart3, User } from "lucide-react";
+import { BarChart3, Calendar, Users, Upload, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { name: "Today", href: "/", icon: Calendar },
+  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Today", href: "/today", icon: Calendar },
   { name: "Leads", href: "/leads", icon: Users },
   { name: "Import", href: "/import", icon: Upload },
-  { name: "Dashboard", href: "/stats", icon: BarChart3 },
   { name: "Account", href: "/account", icon: User },
 ];
 
@@ -21,7 +21,7 @@ export function BottomTabBar() {
   return (
     <nav
       aria-label="Main Navigation"
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] font-sans"
     >
       <div className="mx-auto flex max-w-md items-center justify-around px-2">
         {tabs.map((tab) => {
