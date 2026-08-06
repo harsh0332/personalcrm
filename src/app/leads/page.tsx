@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { LeadCard, LeadCardData } from "@/components/lead-card";
 import { LeadFilters, FilterState } from "@/components/lead-filters";
 import { LeadDetailModal, FullLeadDetails } from "@/components/lead-detail-modal";
+import { LeadCallView, ActiveLeadCallData } from "@/components/lead-call-view";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Users, Upload, FilterX, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
@@ -32,6 +33,7 @@ export default function LeadsPage() {
   const [hasMore, setHasMore] = useState<boolean>(false);
 
   const [selectedLead, setSelectedLead] = useState<FullLeadDetails | null>(null);
+  const [activeCallLeadIndex, setActiveCallLeadIndex] = useState<number | null>(null);
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
@@ -94,13 +96,13 @@ export default function LeadsPage() {
         let query = supabase
           .from("leads")
           .select(
-            "id, cid, name, phone, phone_e164, area, category, tier, rating, review_count, demand_score, status, do_not_call, area_source",
+            "id, cid, name, phone, phone_e164, area, category, tier, rating, review_count, demand_score, status, do_not_call, area_source, attempts",
             { count: "exact" }
           );
 
         // a) Default Hidden Filter
         if (!filters.showHidden) {
-          query = query.eq("do_not_call", false).not("status", "in", '("lost","invalid")');
+          query = query.eq("do_not_call", false).not("status", "in", '("lost","invalid","parked")');
         }
 
         // b) Specific Tier Filter
@@ -205,27 +207,16 @@ export default function LeadsPage() {
     }
   };
 
-  const handleCardClick = useCallback(
-    async (leadId: string) => {
-      setLoadingDetail(true);
-      try {
-        const { data, error } = await supabase
-          .from("leads")
-          .select("*")
-          .eq("id", leadId)
-          .single();
+  const handleCardClick = useCallback((idx: number) => {
+    setActiveCallLeadIndex(idx);
+  }, []);
 
-        if (!error && data) {
-          setSelectedLead(data as FullLeadDetails);
-        }
-      } catch {
-        // Ignored
-      } finally {
-        setLoadingDetail(false);
-      }
-    },
-    [supabase]
-  );
+  const activeCallLead = useMemo(() => {
+    if (activeCallLeadIndex !== null && leads[activeCallLeadIndex]) {
+      return leads[activeCallLeadIndex] as unknown as ActiveLeadCallData;
+    }
+    return null;
+  }, [activeCallLeadIndex, leads]);
 
   return (
     <main className="flex-1 flex flex-col min-h-screen bg-zinc-950 pb-20">
@@ -243,7 +234,6 @@ export default function LeadsPage() {
 
       {/* Main Content Area */}
       <div className="flex-1 p-4 max-w-md mx-auto w-full space-y-3">
-        {/* HARD ERROR STATE (No silent swallowing!) */}
         {fetchError ? (
           <div className="py-12 px-4 rounded-xl border border-rose-800/80 bg-rose-950/40 text-center space-y-4">
             <div className="p-3 bg-rose-900/50 text-rose-300 rounded-full w-12 h-12 mx-auto flex items-center justify-center">
@@ -263,7 +253,6 @@ export default function LeadsPage() {
             </Button>
           </div>
         ) : loading ? (
-          // SKELETON LOADING STATE
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
@@ -280,7 +269,6 @@ export default function LeadsPage() {
             ))}
           </div>
         ) : leads.length === 0 && totalCount === 0 ? (
-          // GENUINE EMPTY STATE: 0 Results
           <div className="py-16 text-center space-y-4">
             {filters.tier || filters.status || filters.area || filters.category || filters.searchQuery ? (
               <>
@@ -321,17 +309,15 @@ export default function LeadsPage() {
             )}
           </div>
         ) : (
-          // RENDER SERVER-PAGINATED LEAD CARDS
           <div className="space-y-3">
-            {leads.map((lead) => (
+            {leads.map((lead, idx) => (
               <LeadCard
                 key={lead.id}
                 lead={lead}
-                onClick={() => handleCardClick(lead.id)}
+                onClick={() => handleCardClick(idx)}
               />
             ))}
 
-            {/* SERVER-SIDE INFINITE SCROLL / LOAD MORE */}
             {hasMore && (
               <div className="pt-4 pb-2 text-center">
                 <Button
@@ -354,7 +340,27 @@ export default function LeadsPage() {
         )}
       </div>
 
-      {/* Lead Detail Drawer/Modal */}
+      {/* ACTIVE CALL VIEW SCREEN */}
+      {activeCallLead && activeCallLeadIndex !== null && (
+        <LeadCallView
+          lead={activeCallLead}
+          onClose={() => setActiveCallLeadIndex(null)}
+          currentIndex={activeCallLeadIndex + 1}
+          totalInQueue={leads.length}
+          onNextLead={() => {
+            if (activeCallLeadIndex + 1 < leads.length) {
+              setActiveCallLeadIndex(activeCallLeadIndex + 1);
+            }
+          }}
+          onPrevLead={() => {
+            if (activeCallLeadIndex - 1 >= 0) {
+              setActiveCallLeadIndex(activeCallLeadIndex - 1);
+            }
+          }}
+        />
+      )}
+
+      {/* Lead Detail Modal */}
       {selectedLead && (
         <LeadDetailModal
           lead={selectedLead}
