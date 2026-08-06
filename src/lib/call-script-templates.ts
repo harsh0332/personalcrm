@@ -1,10 +1,19 @@
 /**
- * CallDesk Per-Lead Spoken Hinglish Call Script Templates
+ * Per-Lead Spoken Hinglish Call Script Templates (KliqCraft Sales Call Engine)
  *
+ * CALLER CONFIGURATION (SINGLE SOURCE OF TRUTH):
+ */
+export const CALLER_CONFIG = {
+  CALLER_NAME: "Harsh",
+  COMPANY_NAME: "KliqCraft",
+};
+
+/**
  * FORBIDDEN PHRASES (DO NOT ADD THESE - THEY INVITE IMMEDIATE HANG-UPS):
  * - "aapko abhi time hai kya" or "time hai kya"
  * - "did I catch you at a bad time" or "bad time"
  * - "ek minute" or "do minute" or "minute" (Ask ONLY for "30 second")
+ * - Internal tool name "CallDesk" must NEVER be spoken to a customer.
  */
 
 export interface ScriptBlockA {
@@ -51,34 +60,62 @@ export interface LeadScriptData {
  * Generates a per-lead call script instantly without any network or AI calls.
  */
 export function generateCallScript(lead: LeadScriptData): GeneratedCallScript {
-  // A. OPENER (Must be 3 lines or fewer, ask for 30 second only, 0 pitch)
+  const gaps = (lead.gap_reasons || []).map((g) => g.toLowerCase());
+  const isSocialOnly = gaps.some((g) => g.includes("social"));
+  const isNoWebsite = gaps.some((g) => g.includes("no website"));
+
+  // -----------------------------------------------------------------
+  // 1. OPENER (Line 1: Name + Company, Line 2: Single Specific True Fact, Line 3: 30 Second Ask)
+  // -----------------------------------------------------------------
+  let openerFactLine = `Google pe dekha aap ${lead.area ? `${lead.area} me ` : ''}top ${lead.category || 'business'} searches me aate hain.`;
+
+  if (lead.review_count !== null && lead.review_count > 0) {
+    const ratingStr = lead.rating ? ` aur ${lead.rating.toFixed(1)} rating` : "";
+    openerFactLine = `Google pe dekha aapke ${lead.review_count} reviews${ratingStr} hain.`;
+  } else if (isSocialOnly) {
+    openerFactLine = "Google listing pe dekha website ki jagah sirf social media page link hai.";
+  } else if (isNoWebsite) {
+    openerFactLine = "Google listing pe dekha website ka link missing hai.";
+  }
+
   const opener: ScriptBlockA = {
-    line1: "Namaste! Mai Harsh bol raha hoon CallDesk se.",
-    line2: `Google pe aapka business listing "${lead.name}" dekha.`,
+    line1: `Namaste! Mai ${CALLER_CONFIG.CALLER_NAME} bol raha hoon ${CALLER_CONFIG.COMPANY_NAME} se.`,
+    line2: openerFactLine,
     line3: "Kya mai 30 second baat kar sakta hoon?",
   };
 
-  // B. WHY THEM (Compliment based STRICTLY on real numbers. If null, return null)
+  // -----------------------------------------------------------------
+  // 2. WHY THEM (Compliment — Short complete Hinglish sentences, 0 filler if review_count is null)
+  // -----------------------------------------------------------------
   let whyThem: ScriptBlockB | null = null;
+
   if (lead.review_count !== null && lead.review_count > 0) {
-    const areaText = lead.area ? ` ${lead.area} me` : "";
-    const categoryText = lead.category ? ` ${lead.category}` : " business";
-    const ratingText = lead.rating ? ` aur ${lead.rating.toFixed(1)} rating` : "";
+    const sentence1 = `Google pe aapki profile kaafi solid hai — ${lead.review_count} reviews hain${
+      lead.rating ? ` aur ${lead.rating.toFixed(1)} rating` : ""
+    }.`;
+
+    let sentence2 = "Aapke sector me aapki kaafi achi online reputation hai.";
+    if (lead.area && lead.category) {
+      sentence2 = `Aap ${lead.area} ke sabse active ${lead.category}s me se ek hain.`;
+    } else if (lead.area) {
+      sentence2 = `Aap ${lead.area} me kafi popular hain.`;
+    }
 
     whyThem = {
-      text: `Aap${areaText}${ratingText} ke sath ${lead.review_count} Google reviews wale top${categoryText} me se ek hain.`,
+      text: `${sentence1} ${sentence2}`,
     };
   }
 
-  // C. THE OBSERVATION (Gap as a curious question, not an accusation)
+  // -----------------------------------------------------------------
+  // 3. THE OBSERVATION (Gap phrased as a curious question)
+  // -----------------------------------------------------------------
   let observationQuestion = "Aapki Google profile me website optimization missing dikha — kya local search se regular clients mil rahe hain?";
-  const gaps = lead.gap_reasons || [];
 
-  if (gaps.some((g) => g.toLowerCase().includes("no website"))) {
+  if (isNoWebsite) {
     observationQuestion = "Google listing pe aapki website link nahi dikhi — kya aap intentionally website nahi rakhte?";
-  } else if (gaps.some((g) => g.toLowerCase().includes("social"))) {
+  } else if (isSocialOnly) {
     observationQuestion = "Website link ki jagah social media page ka link hai — kya lagta hai clients social page se direct convert hote hain?";
-  } else if (gaps.some((g) => g.toLowerCase().includes("policy") || g.toLowerCase().includes("violates"))) {
+  } else if (gaps.some((g) => g.includes("policy") || g.includes("violates"))) {
     observationQuestion = "Listing name me extra keywords dikhe — kya Google se warning ya search penalty ka issue aaya hai?";
   }
 
@@ -86,13 +123,17 @@ export function generateCallScript(lead: LeadScriptData): GeneratedCallScript {
     question: observationQuestion,
   };
 
-  // D. WHAT IT IS COSTING THEM (Problem language, not feature pitch)
+  // -----------------------------------------------------------------
+  // 4. WHAT IT IS COSTING THEM (Problem language, not feature pitch)
+  // -----------------------------------------------------------------
   const costOfProblem: ScriptBlockD = {
     problemStatement:
       "Har mahine hundreds of searchers aapki listing dekhte hain, par proper website na hone se direct competitor ko call kar lete hain. Ye daily client loss hai.",
   };
 
-  // E. IF THEY SAY... (Common objections & proven replies)
+  // -----------------------------------------------------------------
+  // 5. IF THEY SAY... (Objections & Replies)
+  // -----------------------------------------------------------------
   const objections: ScriptObjection[] = [
     {
       objection: '"Abhi busy hoon"',
