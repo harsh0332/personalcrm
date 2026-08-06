@@ -71,14 +71,34 @@ export function detectGapReasonsSeparator(
 
 export function parseGapReasons(
   raw: string | null | undefined,
-  separator: "," | ";" | "|"
+  separator?: "," | ";" | "|"
 ): string[] | null {
   if (!raw || !String(raw).trim()) return null;
-  const items = String(raw)
-    .split(separator)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : null;
+  
+  // Split on ;, ,, or | and trim items
+  const items: string[] = [];
+  const rawStr = String(raw).trim();
+  
+  // Split using regex for ;, ,, or |
+  const parts = rawStr.split(/[;,|]/);
+  const result = new Set<string>();
+
+  parts.forEach((p) => {
+    let trimmed = p.trim();
+    if (!trimmed) return;
+
+    // Extract short category before ' — ' or ' - ' if present
+    if (trimmed.includes(" — ")) {
+      trimmed = trimmed.split(" — ")[0].trim();
+    } else if (trimmed.includes(" - ")) {
+      trimmed = trimmed.split(" - ")[0].trim();
+    }
+
+    result.add(trimmed);
+  });
+
+  const arr = Array.from(result);
+  return arr.length > 0 ? arr : null;
 }
 
 export const DB_COLUMNS = [

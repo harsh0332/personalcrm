@@ -1,11 +1,15 @@
 /**
- * Per-Lead Spoken Hinglish Call Script Templates (KliqCraft Sales Call Engine)
+ * Per-Lead Spoken Hinglish Call Script Templates (PixelLayerr Sales Call Engine)
  *
- * CALLER CONFIGURATION (SINGLE SOURCE OF TRUTH):
+ * COMPANY CONFIGURATION (SINGLE SOURCE OF TRUTH):
+ * Note exact spelling:
+ * - Company Name: PixelLayerr (two "r"s)
+ * - Domain Website: pixellayerss.com (two "s"s)
  */
 export const CALLER_CONFIG = {
   CALLER_NAME: "Harsh",
-  COMPANY_NAME: "KliqCraft",
+  COMPANY_NAME: "PixelLayerr",
+  WEBSITE_URL: "pixellayerss.com",
 };
 
 /**
@@ -67,7 +71,7 @@ export function generateCallScript(lead: LeadScriptData): GeneratedCallScript {
   // -----------------------------------------------------------------
   // 1. OPENER (Line 1: Name + Company, Line 2: Single Specific True Fact, Line 3: 30 Second Ask)
   // -----------------------------------------------------------------
-  let openerFactLine = `Google pe dekha aap ${lead.area ? `${lead.area} me ` : ''}top ${lead.category || 'business'} searches me aate hain.`;
+  let openerFactLine = `Google pe dekha aap ${lead.area ? `${lead.area} me ` : ''}top ${lead.category || 'dentist'} searches me aate hain.`;
 
   if (lead.review_count !== null && lead.review_count > 0) {
     const ratingStr = lead.rating ? ` aur ${lead.rating.toFixed(1)} rating` : "";
@@ -124,20 +128,33 @@ export function generateCallScript(lead: LeadScriptData): GeneratedCallScript {
   };
 
   // -----------------------------------------------------------------
-  // 4. WHAT IT IS COSTING THEM (Problem language, not feature pitch)
+  // 4. WHAT IT IS COSTING THEM (Problem language based STRICTLY on lead data, 0 unsourced claims)
   // -----------------------------------------------------------------
+  let problemText = "Searchers direct competitor ki website par land kar ke appointment book kar lete hain kyunki aapka site link missing hai.";
+
+  if (lead.review_count !== null && lead.review_count > 0) {
+    problemText = `Jab bhi koi prospective client Google pe ${lead.category || "clinic"} dhoondhta hai, aapki ${lead.review_count} reviews dekhta hai. Par website na hone se dusre clinic par move ho jaata hai.`;
+  } else if (lead.review_count === null) {
+    problemText = "Profile pe reviews ya website link na hone se local searchers ko trust build nahi hota, isliye wo established clinics ko prefer karte hain.";
+  } else if (isSocialOnly) {
+    problemText = "Social page pe clear booking options na milne se serious patients instant call ki jagah drop off ho jaate hain.";
+  }
+
   const costOfProblem: ScriptBlockD = {
-    problemStatement:
-      "Har mahine hundreds of searchers aapki listing dekhte hain, par proper website na hone se direct competitor ko call kar lete hain. Ye daily client loss hai.",
+    problemStatement: problemText,
   };
 
   // -----------------------------------------------------------------
-  // 5. IF THEY SAY... (Objections & Replies)
+  // 5. IF THEY SAY... (Objections & Replies using company site pixellayerss.com where helpful)
   // -----------------------------------------------------------------
   const objections: ScriptObjection[] = [
     {
       objection: '"Abhi busy hoon"',
       reply: "Bilkul samajhta hoon. Mai kal subah 11 baje 30 second connect karta hoon, ya WhatsApp pe short details drop kar doon?",
+    },
+    {
+      objection: '"Kaun ho aap / Kya karte ho"',
+      reply: `Hum ${CALLER_CONFIG.COMPANY_NAME} se hain (${CALLER_CONFIG.WEBSITE_URL}). Local businesses ki Google visibility aur patient conversions grow karne me help karte hain.`,
     },
     {
       objection: '"Hai humari website"',
@@ -149,7 +166,7 @@ export function generateCallScript(lead: LeadScriptData): GeneratedCallScript {
     },
     {
       objection: '"WhatsApp pe bhej do"',
-      reply: "Zaroor bhejta hoon! Mai 30 second me info text bhej raha hoon. Kya isi number pe WhatsApp active hai?",
+      reply: `Zaroor! Mai 30 second me WhatsApp pe details aur humari site ${CALLER_CONFIG.WEBSITE_URL} link kar deta hoon. Kya isi number pe active hai?`,
     },
   ];
 
