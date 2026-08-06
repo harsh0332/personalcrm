@@ -34,6 +34,7 @@ interface ImportRecord {
   total_rows: number;
   inserted: number;
   duplicates: number;
+  duplicates_in_file?: number;
   skipped: number;
   imported_at: string;
 }
@@ -50,9 +51,11 @@ export default function ImportPage() {
   const [importSummary, setImportSummary] = useState<{
     totalRows: number;
     inserted: number;
-    duplicates: number;
+    alreadyExisted: number;
+    duplicatesInFile: number;
     skipped: number;
     skippedRows: SkippedRowInfo[];
+    logWarning?: string | null;
   } | null>(null);
 
   const [importError, setImportError] = useState<string | null>(null);
@@ -79,7 +82,7 @@ export default function ImportPage() {
         setRecentImports(data as ImportRecord[]);
       }
     } catch {
-      // Ignored in offline/stub mode
+      // Ignored in offline mode
     } finally {
       setLoadingHistory(false);
     }
@@ -205,13 +208,13 @@ export default function ImportPage() {
 
     const ownerId = user?.id;
 
-    let insertedCount = 0;
-    let duplicateCount = 0;
+    let duplicatesInFileCount = 0;
     let skippedCount = 0;
     const skippedRowsList: SkippedRowInfo[] = [];
     const validRecords: LeadInsertRecord[] = [];
+    const seenCidsInFile = new Set<string>();
 
-    // Row transformations & validation
+    // 1. Row transforms, validation, and IN-FILE DEDUPLICATION (Part A)
     rawRows.forEach((row, idx) => {
       const getVal = (targetKey: string) => {
         const header = Object.keys(headerMapping).find((h) => headerMapping[h] === targetKey);
@@ -245,6 +248,13 @@ export default function ImportPage() {
         });
         return;
       }
+
+      // Deduplicate within the file: keep 1st occurrence, count repeated as duplicatesInFile
+      if (seenCidsInFile.has(cid)) {
+        duplicatesInFileCount++;
+        return;
+      }
+      seenCidsInFile.add(cid);
 
       const address = getVal("address") ? String(getVal("address")).trim() : null;
       const area = getVal("area") ? String(getVal("area")).trim() : null;
@@ -287,29 +297,22 @@ export default function ImportPage() {
       });
     });
 
+    // 2. Batch writing and exact insert count via ON CONFLICT DO NOTHING RETURNING select("cid") (Part B)
     const BATCH_SIZE = 100;
     const totalBatches = Math.ceil(validRecords.length / BATCH_SIZE);
+
+    let totalInserted = 0;
+    let totalAlreadyExisted = 0;
 
     for (let b = 0; b < totalBatches; b++) {
       setProgress({ current: b + 1, total: totalBatches || 1 });
       const batch = validRecords.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
 
       try {
-        // Query existing cids for this owner in this batch to accurately count duplicates vs inserted
-        const cidsInBatch = batch.map((r) => r.cid);
-        const { data: existingLeads } = await supabase
+        const { data: insertedRows, error: batchError } = await supabase
           .from("leads")
-          .select("cid")
-          .in("cid", cidsInBatch);
-
-        const existingCidsSet = new Set((existingLeads || []).map((l) => l.cid));
-        const batchDuplicates = batch.filter((r) => existingCidsSet.has(r.cid)).length;
-        const batchNew = batch.length - batchDuplicates;
-
-        // Perform ON CONFLICT DO NOTHING insert via ignoreDuplicates option
-        const { error: batchError } = await supabase
-          .from("leads")
-          .upsert(batch, { onConflict: "owner,cid", ignoreDuplicates: true });
+          .upsert(batch, { onConflict: "owner,cid", ignoreDuplicates: true })
+          .select("cid");
 
         if (batchError) {
           setImportError(
@@ -319,8 +322,11 @@ export default function ImportPage() {
           return;
         }
 
-        insertedCount += batchNew;
-        duplicateCount += batchDuplicates;
+        const batchInserted = insertedRows ? insertedRows.length : 0;
+        const batchAlreadyExisted = batch.length - batchInserted;
+
+        totalInserted += batchInserted;
+        totalAlreadyExisted += batchAlreadyExisted;
       } catch (err: any) {
         setImportError(`Import stopped at batch ${b + 1}: ${err.message}`);
         setStage("map");
@@ -328,30 +334,38 @@ export default function ImportPage() {
       }
     }
 
-    // Record entry into `imports` table
-    const importRecord = {
+    // 3. Write row to `imports` table and surface any failure visibly (Item 2)
+    let logWarning: string | null = null;
+
+    const importRecordPayload = {
       owner: ownerId,
       filename: file?.name || "leads.csv",
       run_id: runIdInput.trim() || file?.name || "run_1",
       total_rows: rawRows.length,
-      inserted: insertedCount,
-      duplicates: duplicateCount,
+      inserted: totalInserted,
+      duplicates: totalAlreadyExisted,
+      duplicates_in_file: duplicatesInFileCount,
       skipped: skippedCount,
       imported_at: new Date().toISOString(),
     };
 
     try {
-      await supabase.from("imports").insert(importRecord);
-    } catch {
-      // Ignored if offline
+      const { error: logError } = await supabase.from("imports").insert(importRecordPayload);
+      if (logError) {
+        logWarning = `Warning: Leads were written to database, but recording session in 'imports' table failed: ${logError.message}`;
+      }
+    } catch (err: any) {
+      logWarning = `Warning: Leads were written to database, but recording session in 'imports' table failed: ${err.message}`;
     }
 
     setImportSummary({
       totalRows: rawRows.length,
-      inserted: insertedCount,
-      duplicates: duplicateCount,
+      inserted: totalInserted,
+      alreadyExisted: totalAlreadyExisted,
+      duplicatesInFile: duplicatesInFileCount,
       skipped: skippedCount,
       skippedRows: skippedRowsList,
+      logWarning,
     });
 
     setStage("summary");
@@ -559,7 +573,7 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* STAGE 4: SUMMARY OUTPUT */}
+      {/* STAGE 4: RECONCILED SUMMARY OUTPUT */}
       {stage === "summary" && importSummary && (
         <div className="space-y-6">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
@@ -568,43 +582,68 @@ export default function ImportPage() {
               <h2 className="text-sm font-bold text-zinc-100">Import Session Complete</h2>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800">
-                <span className="text-[10px] text-zinc-400 uppercase font-medium block">
-                  Total File Rows
-                </span>
-                <span className="text-lg font-bold text-zinc-100">{importSummary.totalRows}</span>
+            {importSummary.logWarning && (
+              <div className="p-3 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-300 text-xs flex items-start space-x-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                <span className="leading-relaxed">{importSummary.logWarning}</span>
               </div>
-              <div className="p-3 bg-emerald-950/40 rounded-lg border border-emerald-800/60">
-                <span className="text-[10px] text-emerald-400 uppercase font-medium block">
-                  Inserted New
-                </span>
-                <span className="text-lg font-bold text-emerald-300">
-                  {importSummary.inserted}
-                </span>
+            )}
+
+            <div className="space-y-2">
+              <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800 flex justify-between items-center">
+                <span className="text-xs text-zinc-400 font-medium">Total File Rows</span>
+                <span className="text-lg font-bold text-zinc-100 font-mono">{importSummary.totalRows}</span>
               </div>
-              <div className="p-3 bg-amber-950/40 rounded-lg border border-amber-800/60">
-                <span className="text-[10px] text-amber-400 uppercase font-medium block">
-                  Already Existed (Skipped)
-                </span>
-                <span className="text-lg font-bold text-amber-300">
-                  {importSummary.duplicates}
-                </span>
-              </div>
-              <div className="p-3 bg-rose-950/40 rounded-lg border border-rose-800/60">
-                <span className="text-[10px] text-rose-400 uppercase font-medium block">
-                  Invalid / Skipped
-                </span>
-                <span className="text-lg font-bold text-rose-300 font-mono">
-                  {importSummary.skipped}
-                </span>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 bg-emerald-950/40 rounded-lg border border-emerald-800/60">
+                  <span className="text-[10px] text-emerald-400 uppercase font-semibold block">
+                    Inserted New
+                  </span>
+                  <span className="text-base font-bold text-emerald-300 font-mono">
+                    {importSummary.inserted}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-amber-950/40 rounded-lg border border-amber-800/60">
+                  <span className="text-[10px] text-amber-400 uppercase font-semibold block">
+                    Already Existed
+                  </span>
+                  <span className="text-base font-bold text-amber-300 font-mono">
+                    {importSummary.alreadyExisted}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-purple-950/40 rounded-lg border border-purple-800/60">
+                  <span className="text-[10px] text-purple-400 uppercase font-semibold block">
+                    Duplicates in File
+                  </span>
+                  <span className="text-base font-bold text-purple-300 font-mono">
+                    {importSummary.duplicatesInFile}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-rose-950/40 rounded-lg border border-rose-800/60">
+                  <span className="text-[10px] text-rose-400 uppercase font-semibold block">
+                    Invalid / Skipped
+                  </span>
+                  <span className="text-base font-bold text-rose-300 font-mono">
+                    {importSummary.skipped}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="text-xs text-center text-zinc-400 pt-2 border-t border-zinc-800/60 font-mono">
-              Verification Check: {importSummary.inserted} + {importSummary.duplicates} +{" "}
-              {importSummary.skipped} = {importSummary.inserted + importSummary.duplicates + importSummary.skipped}{" "}
-              (Matches total {importSummary.totalRows})
+            {/* RECONCILIATION ARITHMETIC PROOF */}
+            <div className="text-xs text-center text-zinc-300 pt-3 border-t border-zinc-800/60 font-mono bg-zinc-950/50 p-2.5 rounded-lg border border-zinc-800">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 font-sans">
+                Reconciliation Arithmetic Proof
+              </div>
+              <div>
+                {importSummary.inserted} (inserted) + {importSummary.alreadyExisted} (already existed) +{" "}
+                {importSummary.duplicatesInFile} (in-file dupes) + {importSummary.skipped} (skipped)
+              </div>
+              <div className="text-emerald-400 font-bold mt-1">
+                = {importSummary.inserted + importSummary.alreadyExisted + importSummary.duplicatesInFile + importSummary.skipped}{" "}
+                (Matches Total File Rows: {importSummary.totalRows})
+              </div>
             </div>
 
             {importSummary.skipped > 0 && (
@@ -668,14 +707,15 @@ export default function ImportPage() {
                 <th className="p-2 border-r border-zinc-800">Run ID</th>
                 <th className="p-2 border-r border-zinc-800">Total</th>
                 <th className="p-2 border-r border-zinc-800 text-emerald-400">Inserted</th>
-                <th className="p-2 border-r border-zinc-800 text-amber-400">Duplicates</th>
+                <th className="p-2 border-r border-zinc-800 text-amber-400">Already Existed</th>
+                <th className="p-2 border-r border-zinc-800 text-purple-400">File Dupes</th>
                 <th className="p-2 text-rose-400">Skipped</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
               {recentImports.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-4 text-center text-zinc-500 text-xs">
+                  <td colSpan={7} className="p-4 text-center text-zinc-500 text-xs">
                     No recent import history recorded.
                   </td>
                 </tr>
@@ -685,7 +725,7 @@ export default function ImportPage() {
                     <td className="p-2 border-r border-zinc-800 text-zinc-200 font-sans max-w-[100px] truncate">
                       {imp.filename}
                     </td>
-                    <td className="p-2 border-r border-zinc-800 text-zinc-400 max-w-[90px] truncate">
+                    <td className="p-2 border-r border-zinc-800 text-zinc-400 max-w-[80px] truncate">
                       {imp.run_id || "-"}
                     </td>
                     <td className="p-2 border-r border-zinc-800 text-zinc-300">
@@ -696,6 +736,9 @@ export default function ImportPage() {
                     </td>
                     <td className="p-2 border-r border-zinc-800 text-amber-300">
                       {imp.duplicates}
+                    </td>
+                    <td className="p-2 border-r border-zinc-800 text-purple-300">
+                      {imp.duplicates_in_file ?? 0}
                     </td>
                     <td className="p-2 text-rose-300">{imp.skipped}</td>
                   </tr>
