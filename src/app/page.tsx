@@ -8,6 +8,7 @@ import {
 } from "@/lib/rate-utils";
 import { KNOWN_GAP_CATEGORIES } from "@/lib/import-utils";
 import { LeadCallView, ActiveLeadCallData } from "@/components/lead-call-view";
+import { DatabaseConnectionAlert } from "@/components/database-connection-alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -491,13 +492,7 @@ export default function DashboardLandingPage() {
       {/* MAIN DASHBOARD CONTENT */}
       <div className="flex-1 p-4 max-w-md mx-auto w-full space-y-5">
         {fetchError ? (
-          <div className="py-12 px-4 rounded-xl border border-rose-800/80 bg-rose-950/40 text-center space-y-4">
-            <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto" />
-            <p className="text-xs text-rose-300 font-mono">{fetchError}</p>
-            <Button onClick={fetchDashboardData} className="bg-rose-800 hover:bg-rose-700 text-xs">
-              Retry Loading Dashboard
-            </Button>
-          </div>
+          <DatabaseConnectionAlert errorMsg={fetchError} onRetry={fetchDashboardData} retrying={loading} />
         ) : loading ? (
           <div className="space-y-4 pt-2">
             {[1, 2, 3, 4].map((i) => (

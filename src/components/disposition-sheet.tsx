@@ -96,6 +96,7 @@ export function DispositionSheet({
     try {
       const {
         data: { user },
+        error: userErr,
       } = await supabase.auth.getUser();
 
       const ownerId = user?.id;
@@ -122,8 +123,8 @@ export function DispositionSheet({
       const shouldPark = disp.code === "no_answer" && noAnswerCount >= 3;
       const finalNextStatus = shouldPark ? "parked" : disp.next_status;
 
-      // OFFLINE QUEUE CHECK: If offline, queue in IndexedDB immediately without throwing network errors
-      if (typeof window !== "undefined" && !navigator.onLine) {
+      // EXPIRED SESSION OR OFFLINE SAFETY: Save input safely into Phase 8 IndexedDB queue
+      if (!user || userErr || (typeof window !== "undefined" && !navigator.onLine)) {
         await enqueueOfflineDisposition({
           lead_id: leadId,
           lead_name: leadName,
@@ -137,6 +138,13 @@ export function DispositionSheet({
         });
 
         setSaving(false);
+
+        if (!user || userErr) {
+          setErrorMsg(
+            "⚠️ Auth session expired — your call outcome has been safely saved to your offline queue! Sign in again to auto-sync."
+          );
+        }
+
         onSuccess(finalNextStatus || "updated", shouldPark);
         return;
       }
