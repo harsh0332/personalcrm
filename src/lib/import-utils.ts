@@ -69,17 +69,25 @@ export function detectGapReasonsSeparator(
   return ",";
 }
 
+export const KNOWN_GAP_CATEGORIES = new Set([
+  "no website",
+  "social/directory page only",
+  "wrong primary GMB category",
+  "listing name violates Google naming policy",
+  "listing unclaimed",
+  "under 10 reviews",
+  "no hours",
+  "no photos",
+  "low rating",
+]);
+
 export function parseGapReasons(
   raw: string | null | undefined,
   separator?: "," | ";" | "|"
 ): string[] | null {
   if (!raw || !String(raw).trim()) return null;
-  
-  // Split on ;, ,, or | and trim items
-  const items: string[] = [];
+
   const rawStr = String(raw).trim();
-  
-  // Split using regex for ;, ,, or |
   const parts = rawStr.split(/[;,|]/);
   const result = new Set<string>();
 
@@ -87,14 +95,23 @@ export function parseGapReasons(
     let trimmed = p.trim();
     if (!trimmed) return;
 
-    // Extract short category before ' — ' or ' - ' if present
+    // Collapse any rating values (e.g. rating 3.1, rating 3.2) into "low rating"
+    if (/^rating\s+/i.test(trimmed)) {
+      trimmed = "low rating";
+    }
+
     if (trimmed.includes(" — ")) {
       trimmed = trimmed.split(" — ")[0].trim();
     } else if (trimmed.includes(" - ")) {
       trimmed = trimmed.split(" - ")[0].trim();
     }
 
-    result.add(trimmed);
+    const lowerCat = trimmed.toLowerCase();
+    if (KNOWN_GAP_CATEGORIES.has(lowerCat)) {
+      result.add(lowerCat);
+    } else {
+      console.warn(`Unrecognized gap_reason imported: "${trimmed}". Logging without creating new category string.`);
+    }
   });
 
   const arr = Array.from(result);

@@ -8,6 +8,7 @@ export interface FilterState {
   status: string;
   area: string;
   category: string;
+  reviewRange: string;
   showHidden: boolean;
   sortBy: string;
   searchQuery: string;
@@ -39,6 +40,7 @@ export function LeadFilters({
     filters.status !== "" ||
     filters.area !== "" ||
     filters.category !== "" ||
+    filters.reviewRange !== "" ||
     filters.showHidden ||
     filters.searchQuery !== "";
 
@@ -147,6 +149,23 @@ export function LeadFilters({
               {c.value} ({c.count})
             </option>
           ))}
+        </select>
+
+        {/* Review Count Range Select */}
+        <select
+          value={filters.reviewRange}
+          onChange={(e) => handleChange("reviewRange", e.target.value)}
+          className={`bg-zinc-900 border text-xs rounded-lg px-2.5 py-1.5 focus:outline-none shrink-0 ${
+            filters.reviewRange ? "border-emerald-500 text-emerald-300 font-semibold" : "border-zinc-800 text-zinc-300"
+          }`}
+        >
+          <option value="">All Review Counts</option>
+          <option value="under_50">&lt; 50 reviews</option>
+          <option value="50_150">50 - 150 reviews</option>
+          <option value="151_300">151 - 300 reviews</option>
+          <option value="300_1000">300 - 1000 reviews</option>
+          <option value="gt_1000">1000+ reviews</option>
+          <option value="unreviewed">Unreviewed (NULL)</option>
         </select>
 
         {/* Show Hidden Toggle */}

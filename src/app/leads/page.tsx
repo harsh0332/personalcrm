@@ -16,6 +16,7 @@ const DEFAULT_FILTERS: FilterState = {
   status: "",
   area: "",
   category: "",
+  reviewRange: "",
   showHidden: false,
   sortBy: "best_first",
   searchQuery: "",
@@ -123,6 +124,21 @@ export default function LeadsPage() {
         // e) Category Filter
         if (filters.category) {
           query = query.eq("category", filters.category);
+        }
+
+        // f) Review Count Range Filter
+        if (filters.reviewRange === "under_50") {
+          query = query.lt("review_count", 50);
+        } else if (filters.reviewRange === "50_150") {
+          query = query.gte("review_count", 50).lte("review_count", 150);
+        } else if (filters.reviewRange === "151_300") {
+          query = query.gte("review_count", 151).lte("review_count", 300);
+        } else if (filters.reviewRange === "300_1000") {
+          query = query.gte("review_count", 301).lte("review_count", 1000);
+        } else if (filters.reviewRange === "gt_1000") {
+          query = query.gt("review_count", 1000);
+        } else if (filters.reviewRange === "unreviewed") {
+          query = query.is("review_count", null);
         }
 
         // f) Server-Side Search (Name or Phone)
