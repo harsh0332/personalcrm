@@ -27,3 +27,4 @@ The application is portable, fast, and optimized for high-velocity phone calling
 1. **Phase Discipline**: Build ONLY the phase you were given. Never work ahead or implement database/auth/screens from later phases until requested.
 2. **Data Integrity**: Never invent lead data or seed fake businesses. Any test data used for verification must be explicitly and obviously labelled as test data (e.g., `[TEST_DATA]`).
 3. **Security**: Never commit `.env.local`, `.env`, or any Supabase key or API secret to source control.
+4. **Database Migrations**: A migration file committed to the repo is NOT a migration applied to the database. After writing any migration, apply it to the live project and prove it by querying the new table/column, before writing code that depends on it.
