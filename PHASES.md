@@ -2,7 +2,7 @@
 
 0 scaffold [x]
 1 schema and auth [x]
-2 import
+2 import [x]
 3 lead list
 4 call screen
 5 follow-ups
