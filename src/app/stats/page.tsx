@@ -499,6 +499,7 @@ export default function StatsPage() {
               title="Conversion By Gap Reason"
               rows={statsData?.gap_stats || []}
               keyName="reason"
+              totalFunnelDialled={statsData?.dialled || 0}
             />
 
             {/* 5B. WHICH REVIEW BAND CONVERTS */}
@@ -608,21 +609,44 @@ function FunnelBox({
   );
 }
 
-// Breakdown Table Sub-Component (Rule 0 Applied)
+// Breakdown Table Sub-Component (Rule 0 Applied + Reconciliation Assertion)
 function BreakdownTableBlock({
   title,
   rows,
   keyName,
+  totalFunnelDialled,
 }: {
   title: string;
   rows: any[];
   keyName: string;
+  totalFunnelDialled?: number;
 }) {
   if (!rows || rows.length === 0) return null;
 
+  // Reconciliation Check: Ensure no calls are dropped or lost
+  const sumDialled = rows.reduce((acc, r) => acc + (r.dialled || 0), 0);
+  const isReconciliationMismatch =
+    totalFunnelDialled !== undefined &&
+    totalFunnelDialled > 0 &&
+    sumDialled < totalFunnelDialled;
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3 text-xs">
-      <h3 className="font-bold uppercase tracking-wider text-zinc-300">{title}</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold uppercase tracking-wider text-zinc-300">{title}</h3>
+        {totalFunnelDialled !== undefined && (
+          <span className="text-[10px] text-zinc-500 font-mono">
+            {rows.length} categories
+          </span>
+        )}
+      </div>
+
+      {isReconciliationMismatch && (
+        <div className="p-2.5 bg-rose-950/80 border border-rose-800 rounded-lg text-rose-300 text-xs flex items-center space-x-2 font-mono">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+          <span>⚠️ Mismatch Warning: Breakdown dialled count ({sumDialled}) differs from total funnel dialled ({totalFunnelDialled}).</span>
+        </div>
+      )}
 
       <div className="space-y-2">
         {rows.map((r, i) => {
