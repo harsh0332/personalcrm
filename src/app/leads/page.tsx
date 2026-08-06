@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { LeadCard, LeadCardData } from "@/components/lead-card";
 import { LeadFilters, FilterState } from "@/components/lead-filters";
 import { LeadDetailModal, FullLeadDetails } from "@/components/lead-detail-modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Users, Upload, FilterX, Loader2 } from "lucide-react";
+import { Users, Upload, FilterX, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 const DEFAULT_FILTERS: FilterState = {
@@ -20,200 +20,212 @@ const DEFAULT_FILTERS: FilterState = {
   searchQuery: "",
 };
 
+const PAGE_SIZE = 50;
+
 export default function LeadsPage() {
-  const [allLeads, setAllLeads] = useState<LeadCardData[]>([]);
+  const [leads, setLeads] = useState<LeadCardData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [page, setPage] = useState<number>(0);
+  const [hasMore, setHasMore] = useState<boolean>(false);
+
   const [selectedLead, setSelectedLead] = useState<FullLeadDetails | null>(null);
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [displayLimit, setDisplayLimit] = useState<number>(50);
+
+  const [availableAreas, setAvailableAreas] = useState<{ value: string; count: number }[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<{ value: string; count: number }[]>([]);
+  const [hiddenCount, setHiddenCount] = useState<number>(0);
 
   const supabase = createClient();
 
-  useEffect(() => {
-    fetchLeads();
-  }, []);
-
-  const fetchLeads = async () => {
-    setLoading(true);
+  // 1. Fetch Distinct Filter Options and Hidden Count from Database
+  const fetchFilterMetadata = useCallback(async () => {
     try {
-      // Select only card columns for list performance
-      const { data, error } = await supabase
+      const { data: areaCatData } = await supabase
         .from("leads")
-        .select(
-          "id, cid, name, phone, phone_e164, area, category, tier, rating, review_count, gap_reasons, demand_score, status, do_not_call, area_source"
+        .select("area, category, do_not_call, status");
+
+      if (areaCatData) {
+        const aCounts: Record<string, number> = {};
+        const cCounts: Record<string, number> = {};
+        let hiddenC = 0;
+
+        areaCatData.forEach((row: any) => {
+          if (row.area) aCounts[row.area] = (aCounts[row.area] || 0) + 1;
+          if (row.category) cCounts[row.category] = (cCounts[row.category] || 0) + 1;
+          if (row.do_not_call || row.status === "lost" || row.status === "invalid") {
+            hiddenC++;
+          }
+        });
+
+        setAvailableAreas(
+          Object.entries(aCounts)
+            .map(([value, count]) => ({ value, count }))
+            .sort((a, b) => b.count - a.count)
         );
 
-      if (!error && data) {
-        setAllLeads(data as unknown as LeadCardData[]);
+        setAvailableCategories(
+          Object.entries(cCounts)
+            .map(([value, count]) => ({ value, count }))
+            .sort((a, b) => b.count - a.count)
+        );
+
+        setHiddenCount(hiddenC);
       }
     } catch {
-      // Ignored if offline
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper to rank Tiers for sorting
-  const getTierRank = (t: string | null): number => {
-    if (!t) return 99;
-    const str = t.trim().toUpperCase();
-    if (str === "A" || str.includes("1")) return 1;
-    if (str === "B" || str.includes("2")) return 2;
-    if (str === "C" || str.includes("3")) return 3;
-    return 99;
-  };
-
-  // Available Filter Options with counts
-  const availableAreas = useMemo(() => {
-    const areaCounts: Record<string, number> = {};
-    allLeads.forEach((l) => {
-      if (l.area) {
-        areaCounts[l.area] = (areaCounts[l.area] || 0) + 1;
-      }
-    });
-    return Object.entries(areaCounts)
-      .map(([value, count]) => ({ value, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [allLeads]);
-
-  const availableCategories = useMemo(() => {
-    const catCounts: Record<string, number> = {};
-    allLeads.forEach((l) => {
-      if (l.category) {
-        catCounts[l.category] = (catCounts[l.category] || 0) + 1;
-      }
-    });
-    return Object.entries(catCounts)
-      .map(([value, count]) => ({ value, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [allLeads]);
-
-  // Hidden Leads Count (DNC / Lost / Invalid)
-  const hiddenCount = useMemo(() => {
-    return allLeads.filter(
-      (l) => l.do_not_call || l.status === "lost" || l.status === "invalid"
-    ).length;
-  }, [allLeads]);
-
-  // Normalization for search query
-  const cleanSearchQuery = filters.searchQuery.trim().toLowerCase();
-  const cleanPhoneQuery = cleanSearchQuery.replace(/[^\d]/g, "");
-
-  // Filter & Sort Pipeline
-  const filteredAndSortedLeads = useMemo(() => {
-    let result = [...allLeads];
-
-    // 1. Default Hidden Filter
-    if (!filters.showHidden) {
-      result = result.filter(
-        (l) => !l.do_not_call && l.status !== "lost" && l.status !== "invalid"
-      );
-    }
-
-    // 2. Specific Tier Filter
-    if (filters.tier) {
-      result = result.filter((l) => {
-        const rawT = (l.tier || "U").trim().toUpperCase();
-        if (filters.tier === "A") return rawT === "A" || rawT.includes("1");
-        if (filters.tier === "B") return rawT === "B" || rawT.includes("2");
-        if (filters.tier === "C") return rawT === "C" || rawT.includes("3");
-        if (filters.tier === "U") return rawT === "U" || getTierRank(l.tier) === 99;
-        return true;
-      });
-    }
-
-    // 3. Status Filter
-    if (filters.status) {
-      result = result.filter((l) => l.status === filters.status);
-    }
-
-    // 4. Area Filter
-    if (filters.area) {
-      result = result.filter((l) => l.area === filters.area);
-    }
-
-    // 5. Category Filter
-    if (filters.category) {
-      result = result.filter((l) => l.category === filters.category);
-    }
-
-    // 6. Search Query (Name or Phone with space/dash/+91 stripping)
-    if (cleanSearchQuery) {
-      result = result.filter((l) => {
-        const matchName = l.name?.toLowerCase().includes(cleanSearchQuery);
-        let matchPhone = false;
-
-        if (cleanPhoneQuery && (l.phone || l.phone_e164)) {
-          const rawP = (l.phone || "").replace(/[^\d]/g, "");
-          const e164P = (l.phone_e164 || "").replace(/[^\d]/g, "");
-          matchPhone = rawP.includes(cleanPhoneQuery) || e164P.includes(cleanPhoneQuery);
-        }
-
-        return matchName || matchPhone;
-      });
-    }
-
-    // 7. Sort Order
-    result.sort((a, b) => {
-      if (filters.sortBy === "demand_desc") {
-        const dA = (a as any).demand_score ?? -Infinity;
-        const dB = (b as any).demand_score ?? -Infinity;
-        return dB - dA;
-      }
-      if (filters.sortBy === "rating_desc") {
-        const rA = a.rating ?? -Infinity;
-        const rB = b.rating ?? -Infinity;
-        return rB - rA;
-      }
-      if (filters.sortBy === "reviews_desc") {
-        const rcA = a.review_count ?? -Infinity;
-        const rcB = b.review_count ?? -Infinity;
-        return rcB - rcA;
-      }
-      if (filters.sortBy === "name_asc") {
-        return a.name.localeCompare(b.name);
-      }
-
-      // Default: Best First (tier ASC, demand_score DESC, review_count DESC)
-      const rankA = getTierRank(a.tier);
-      const rankB = getTierRank(b.tier);
-      if (rankA !== rankB) return rankA - rankB;
-
-      const demandA = (a as any).demand_score ?? -Infinity;
-      const demandB = (b as any).demand_score ?? -Infinity;
-      if (demandA !== demandB) return demandB - demandA;
-
-      const reviewA = a.review_count ?? -Infinity;
-      const reviewB = b.review_count ?? -Infinity;
-      return reviewB - reviewA;
-    });
-
-    return result;
-  }, [allLeads, filters, cleanSearchQuery, cleanPhoneQuery]);
-
-  const handleCardClick = useCallback(async (leadId: string) => {
-    setLoadingDetail(true);
-    try {
-      const { data, error } = await supabase
-        .from("leads")
-        .select("*")
-        .eq("id", leadId)
-        .single();
-
-      if (!error && data) {
-        setSelectedLead(data as FullLeadDetails);
-      }
-    } catch {
-      // Ignored
-    } finally {
-      setLoadingDetail(false);
+      // Ignored for metadata
     }
   }, [supabase]);
 
-  const displayedLeads = useMemo(() => {
-    return filteredAndSortedLeads.slice(0, displayLimit);
-  }, [filteredAndSortedLeads, displayLimit]);
+  // 2. Main Server-Side Lead Query Engine
+  const fetchLeadsServerSide = useCallback(
+    async (targetPage: number, append: boolean = false) => {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      setFetchError(null);
+
+      try {
+        let query = supabase
+          .from("leads")
+          .select(
+            "id, cid, name, phone, phone_e164, area, category, tier, rating, review_count, demand_score, status, do_not_call, area_source",
+            { count: "exact" }
+          );
+
+        // a) Default Hidden Filter
+        if (!filters.showHidden) {
+          query = query.eq("do_not_call", false).not("status", "in", '("lost","invalid")');
+        }
+
+        // b) Specific Tier Filter
+        if (filters.tier) {
+          query = query.eq("tier", filters.tier);
+        }
+
+        // c) Status Filter
+        if (filters.status) {
+          query = query.eq("status", filters.status);
+        }
+
+        // d) Area Filter
+        if (filters.area) {
+          query = query.eq("area", filters.area);
+        }
+
+        // e) Category Filter
+        if (filters.category) {
+          query = query.eq("category", filters.category);
+        }
+
+        // f) Server-Side Search (Name or Phone)
+        const cleanQuery = filters.searchQuery.trim();
+        const cleanPhoneDigits = cleanQuery.replace(/[^\d]/g, "");
+
+        if (cleanQuery) {
+          if (cleanPhoneDigits && cleanPhoneDigits.length >= 3) {
+            query = query.or(
+              `name.ilike.%${cleanQuery}%,phone_e164.ilike.%${cleanPhoneDigits}%,phone.ilike.%${cleanQuery}%`
+            );
+          } else {
+            query = query.ilike("name", `%${cleanQuery}%`);
+          }
+        }
+
+        // g) Server-Side Sorting
+        if (filters.sortBy === "demand_desc") {
+          query = query
+            .order("demand_score", { ascending: false, nullsFirst: false })
+            .order("review_count", { ascending: false, nullsFirst: false });
+        } else if (filters.sortBy === "rating_desc") {
+          query = query.order("rating", { ascending: false, nullsFirst: false });
+        } else if (filters.sortBy === "reviews_desc") {
+          query = query.order("review_count", { ascending: false, nullsFirst: false });
+        } else if (filters.sortBy === "name_asc") {
+          query = query.order("name", { ascending: true });
+        } else {
+          // Default Best First: tier ASC, demand_score DESC, review_count DESC
+          query = query
+            .order("tier", { ascending: true, nullsFirst: false })
+            .order("demand_score", { ascending: false, nullsFirst: false })
+            .order("review_count", { ascending: false, nullsFirst: false });
+        }
+
+        // h) Server-Side Range Pagination
+        const fromIndex = targetPage * PAGE_SIZE;
+        const toIndex = (targetPage + 1) * PAGE_SIZE - 1;
+        query = query.range(fromIndex, toIndex);
+
+        const { data, error, count } = await query;
+
+        if (error) {
+          setFetchError(`Database Query Error: ${error.message}`);
+          return;
+        }
+
+        const newLeads = (data || []) as unknown as LeadCardData[];
+        const total = count ?? 0;
+
+        setTotalCount(total);
+
+        if (append) {
+          setLeads((prev) => [...prev, ...newLeads]);
+        } else {
+          setLeads(newLeads);
+        }
+
+        setPage(targetPage);
+        setHasMore((targetPage + 1) * PAGE_SIZE < total);
+      } catch (err: any) {
+        setFetchError(`Network error fetching leads: ${err.message}`);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [filters, supabase]
+  );
+
+  useEffect(() => {
+    fetchFilterMetadata();
+  }, [fetchFilterMetadata]);
+
+  useEffect(() => {
+    fetchLeadsServerSide(0, false);
+  }, [fetchLeadsServerSide]);
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      fetchLeadsServerSide(page + 1, true);
+    }
+  };
+
+  const handleCardClick = useCallback(
+    async (leadId: string) => {
+      setLoadingDetail(true);
+      try {
+        const { data, error } = await supabase
+          .from("leads")
+          .select("*")
+          .eq("id", leadId)
+          .single();
+
+        if (!error && data) {
+          setSelectedLead(data as FullLeadDetails);
+        }
+      } catch {
+        // Ignored
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [supabase]
+  );
 
   return (
     <main className="flex-1 flex flex-col min-h-screen bg-zinc-950 pb-20">
@@ -225,13 +237,33 @@ export default function LeadsPage() {
         availableAreas={availableAreas}
         availableCategories={availableCategories}
         hiddenCount={hiddenCount}
-        totalFilteredCount={filteredAndSortedLeads.length}
+        totalFilteredCount={totalCount}
+        currentLoadedCount={leads.length}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 p-4 max-w-md mx-auto w-full space-y-3">
-        {loading ? (
-          // Skeleton Loading State
+        {/* HARD ERROR STATE (No silent swallowing!) */}
+        {fetchError ? (
+          <div className="py-12 px-4 rounded-xl border border-rose-800/80 bg-rose-950/40 text-center space-y-4">
+            <div className="p-3 bg-rose-900/50 text-rose-300 rounded-full w-12 h-12 mx-auto flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-rose-200">Failed to load leads</h3>
+              <p className="text-xs text-rose-400 font-mono max-w-xs mx-auto leading-relaxed">
+                {fetchError}
+              </p>
+            </div>
+            <Button
+              onClick={() => fetchLeadsServerSide(0, false)}
+              className="bg-rose-800 hover:bg-rose-700 text-zinc-100 text-xs font-semibold"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Retry Request
+            </Button>
+          </div>
+        ) : loading ? (
+          // SKELETON LOADING STATE
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
@@ -247,48 +279,51 @@ export default function LeadsPage() {
               </div>
             ))}
           </div>
-        ) : allLeads.length === 0 ? (
-          // Empty State: 0 leads in Database
+        ) : leads.length === 0 && totalCount === 0 ? (
+          // GENUINE EMPTY STATE: 0 Results
           <div className="py-16 text-center space-y-4">
-            <div className="p-4 bg-zinc-900 rounded-full w-14 h-14 mx-auto flex items-center justify-center text-zinc-500">
-              <Users className="w-7 h-7" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="text-base font-semibold text-zinc-200">No leads in CRM yet</h2>
-              <p className="text-xs text-zinc-400 max-w-xs mx-auto">
-                Upload a scraper export (.csv or .xlsx) to populate your lead list.
-              </p>
-            </div>
-            <Link href="/import">
-              <Button className="bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-semibold text-xs">
-                <Upload className="w-4 h-4 mr-1.5" /> Go to Import Tab
-              </Button>
-            </Link>
-          </div>
-        ) : filteredAndSortedLeads.length === 0 ? (
-          // Empty State: Filters match 0 leads
-          <div className="py-16 text-center space-y-4">
-            <div className="p-4 bg-zinc-900 rounded-full w-14 h-14 mx-auto flex items-center justify-center text-amber-400">
-              <FilterX className="w-7 h-7" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="text-base font-semibold text-zinc-200">No matching leads found</h2>
-              <p className="text-xs text-zinc-400 max-w-xs mx-auto">
-                Try adjusting your search query or clear active filters.
-              </p>
-            </div>
-            <Button
-              onClick={() => setFilters(DEFAULT_FILTERS)}
-              variant="outline"
-              className="border-zinc-800 text-zinc-300 hover:text-zinc-100 text-xs"
-            >
-              Clear All Filters
-            </Button>
+            {filters.tier || filters.status || filters.area || filters.category || filters.searchQuery ? (
+              <>
+                <div className="p-4 bg-zinc-900 rounded-full w-14 h-14 mx-auto flex items-center justify-center text-amber-400">
+                  <FilterX className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-zinc-200">No matching leads found</h2>
+                  <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+                    No leads match your active server-side search or filter criteria.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                  variant="outline"
+                  className="border-zinc-800 text-zinc-300 hover:text-zinc-100 text-xs"
+                >
+                  Clear All Filters
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="p-4 bg-zinc-900 rounded-full w-14 h-14 mx-auto flex items-center justify-center text-zinc-500">
+                  <Users className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-zinc-200">No leads in CRM yet</h2>
+                  <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+                    Upload a scraper export (.csv or .xlsx) to populate your lead list.
+                  </p>
+                </div>
+                <Link href="/import">
+                  <Button className="bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-semibold text-xs">
+                    <Upload className="w-4 h-4 mr-1.5" /> Go to Import Tab
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         ) : (
-          // Render Filtered Lead Cards List
+          // RENDER SERVER-PAGINATED LEAD CARDS
           <div className="space-y-3">
-            {displayedLeads.map((lead) => (
+            {leads.map((lead) => (
               <LeadCard
                 key={lead.id}
                 lead={lead}
@@ -296,15 +331,22 @@ export default function LeadsPage() {
               />
             ))}
 
-            {/* Pagination / Load More */}
-            {displayLimit < filteredAndSortedLeads.length && (
+            {/* SERVER-SIDE INFINITE SCROLL / LOAD MORE */}
+            {hasMore && (
               <div className="pt-4 pb-2 text-center">
                 <Button
-                  onClick={() => setDisplayLimit((prev) => prev + 50)}
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
                   variant="outline"
                   className="w-full border-zinc-800 text-zinc-300 hover:bg-zinc-900 text-xs font-semibold"
                 >
-                  Load More Leads ({filteredAndSortedLeads.length - displayLimit} remaining)
+                  {loadingMore ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Fetching Next 50 Leads...
+                    </span>
+                  ) : (
+                    `Load Next 50 Leads (${leads.length} of ${totalCount} shown)`
+                  )}
                 </Button>
               </div>
             )}
@@ -312,7 +354,7 @@ export default function LeadsPage() {
         )}
       </div>
 
-      {/* Lead Detail Read-Only Drawer/Modal */}
+      {/* Lead Detail Drawer/Modal */}
       {selectedLead && (
         <LeadDetailModal
           lead={selectedLead}

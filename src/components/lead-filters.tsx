@@ -1,6 +1,6 @@
 "use client";
 
-import { Filter, X, Search } from "lucide-react";
+import { X, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface FilterState {
@@ -21,6 +21,7 @@ interface LeadFiltersProps {
   availableCategories: { value: string; count: number }[];
   hiddenCount: number;
   totalFilteredCount: number;
+  currentLoadedCount: number;
 }
 
 export function LeadFilters({
@@ -31,6 +32,7 @@ export function LeadFilters({
   availableCategories,
   hiddenCount,
   totalFilteredCount,
+  currentLoadedCount,
 }: LeadFiltersProps) {
   const isFiltered =
     filters.tier !== "" ||
@@ -175,7 +177,9 @@ export function LeadFilters({
 
       {/* Filter Info Sub-bar */}
       <div className="flex items-center justify-between text-[11px] text-zinc-400 font-mono px-0.5">
-        <span>Showing {totalFilteredCount} leads</span>
+        <span>
+          Showing {currentLoadedCount} of {totalFilteredCount} leads
+        </span>
         {!filters.showHidden && hiddenCount > 0 && (
           <span className="text-amber-400">
             {hiddenCount} hidden (lost, invalid, do-not-call)
