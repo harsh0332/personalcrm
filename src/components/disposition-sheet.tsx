@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { calculateNextActionAt } from "@/lib/call-utils";
-import { X, Calendar, Clock, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
+import { Clock, Calendar, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface DispositionItem {
@@ -45,7 +45,6 @@ export function DispositionSheet({
 
   const supabase = createClient();
 
-  // Update duration when sheet opens with new calculated time away
   useEffect(() => {
     if (isOpen) {
       setDurationSec(initialDurationSec);
@@ -54,7 +53,6 @@ export function DispositionSheet({
     }
   }, [isOpen, initialDurationSec]);
 
-  // Fetch dispositions table from Supabase
   useEffect(() => {
     async function loadDispositions() {
       const { data, error } = await supabase
@@ -75,10 +73,10 @@ export function DispositionSheet({
       setSelectedDispCode(disp.code);
       setErrorMsg(null);
 
-      // Check if custom date is required for busy_callback / meeting_fixed
-      const needsDatePicker = disp.follow_up_days === null && (disp.code === "busy_callback" || disp.code === "meeting_fixed");
+      const needsDatePicker =
+        disp.follow_up_days === null &&
+        (disp.code === "busy_callback" || disp.code === "meeting_fixed");
       if (needsDatePicker && !customDate) {
-        // Default custom date to Tomorrow
         const tmr = new Date();
         tmr.setDate(tmr.getDate() + 1);
         setCustomDate(tmr.toISOString().split("T")[0]);
@@ -102,14 +100,13 @@ export function DispositionSheet({
       const ownerId = user?.id;
       const nowIso = new Date().toISOString();
 
-      // Calculate next_action_at
       let targetFollowUpDate: Date | null = null;
       if (customDate) {
         targetFollowUpDate = new Date(customDate);
       }
       const nextActionAt = calculateNextActionAt(disp.follow_up_days, targetFollowUpDate);
 
-      // 1. Check previous no_answer activity count on this lead
+      // Check 3 No-Answer Parked Guardrail
       let noAnswerCount = 0;
       if (disp.code === "no_answer") {
         const { data: noAnsActs } = await supabase
@@ -118,14 +115,13 @@ export function DispositionSheet({
           .eq("lead_id", leadId)
           .eq("disposition", "no_answer");
 
-        noAnswerCount = (noAnsActs?.length || 0) + 1; // including current one
+        noAnswerCount = (noAnsActs?.length || 0) + 1;
       }
 
-      // Check 3 No-Answer Parked Guardrail
       const shouldPark = disp.code === "no_answer" && noAnswerCount >= 3;
       const finalNextStatus = shouldPark ? "parked" : disp.next_status;
 
-      // 2. INSERT into activities (APPEND-ONLY, NO UPDATE/DELETE)
+      // 1. INSERT into activities (kind, disposition, duration_sec, note, occurred_at)
       const { error: actErr } = await supabase.from("activities").insert({
         owner: ownerId,
         lead_id: leadId,
@@ -142,7 +138,7 @@ export function DispositionSheet({
         return;
       }
 
-      // 3. UPDATE leads table
+      // 2. UPDATE leads table (attempts, last_called_at, status, do_not_call, next_action_at, updated_at)
       const leadUpdatePayload: Record<string, any> = {
         attempts: currentAttempts + 1,
         last_called_at: nowIso,
@@ -170,18 +166,22 @@ export function DispositionSheet({
         return;
       }
 
-      // 4. INSERT into followups table if nextActionAt is set
+      // 3. INSERT into followups table (due_at, reason) — STOP SWALLOWING ERRORS!
       if (nextActionAt) {
+        const followupReason = note.trim() || `Followup for ${disp.label}`;
         const { error: fllwErr } = await supabase.from("followups").insert({
           owner: ownerId,
           lead_id: leadId,
           due_at: nextActionAt,
-          status: "pending",
-          note: note.trim() || null,
+          reason: followupReason,
         });
 
         if (fllwErr) {
-          console.error("Followup record insert warning:", fllwErr.message);
+          setErrorMsg(
+            `Activity & lead state saved, but creating follow-up commitment failed: ${fllwErr.message}`
+          );
+          setSaving(false);
+          return;
         }
       }
 
@@ -230,7 +230,7 @@ export function DispositionSheet({
           </Button>
         </div>
 
-        {/* LOUD ERROR FAILURE BANNER (Input Preserved!) */}
+        {/* LOUD ERROR FAILURE BANNER */}
         {errorMsg && (
           <div className="p-3 bg-rose-950/80 border-2 border-rose-800 rounded-xl text-rose-200 text-xs space-y-2">
             <div className="flex items-start space-x-2">
@@ -249,7 +249,7 @@ export function DispositionSheet({
           </div>
         )}
 
-        {/* Editable Approximate Duration & Note Inputs */}
+        {/* Inputs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div className="space-y-1">
             <label className="text-zinc-400 font-medium flex items-center justify-between">
@@ -278,7 +278,7 @@ export function DispositionSheet({
           </div>
         </div>
 
-        {/* Date Picker for Callback / Meeting Fixed */}
+        {/* Date Picker */}
         {activeDisp && activeDisp.follow_up_days === null && (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed") && (
           <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl space-y-2 text-xs">
             <div className="flex items-center justify-between text-zinc-300 font-medium">
@@ -328,7 +328,7 @@ export function DispositionSheet({
           </div>
         )}
 
-        {/* Dynamic Disposition Buttons Grid */}
+        {/* Dynamic Buttons */}
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400 block">
             Select Call Disposition (One Tap)
