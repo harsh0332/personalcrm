@@ -81,15 +81,22 @@ export const KNOWN_GAP_CATEGORIES = new Set([
   "low rating",
 ]);
 
-export function parseGapReasons(
-  raw: string | null | undefined,
-  separator?: "," | ";" | "|"
-): string[] | null {
-  if (!raw || !String(raw).trim()) return null;
+export interface ParsedGapReasonsResult {
+  gap_reasons: string[] | null;
+  unrecognized: string[];
+}
+
+export function parseGapReasonsDetailed(
+  raw: string | null | undefined
+): ParsedGapReasonsResult {
+  if (!raw || !String(raw).trim()) {
+    return { gap_reasons: null, unrecognized: [] };
+  }
 
   const rawStr = String(raw).trim();
   const parts = rawStr.split(/[;,|]/);
-  const result = new Set<string>();
+  const resultSet = new Set<string>();
+  const unrecognizedList: string[] = [];
 
   parts.forEach((p) => {
     let trimmed = p.trim();
@@ -100,22 +107,35 @@ export function parseGapReasons(
       trimmed = "low rating";
     }
 
+    let catName = trimmed;
     if (trimmed.includes(" — ")) {
-      trimmed = trimmed.split(" — ")[0].trim();
+      catName = trimmed.split(" — ")[0].trim();
     } else if (trimmed.includes(" - ")) {
-      trimmed = trimmed.split(" - ")[0].trim();
+      catName = trimmed.split(" - ")[0].trim();
     }
 
-    const lowerCat = trimmed.toLowerCase();
+    const lowerCat = catName.toLowerCase();
     if (KNOWN_GAP_CATEGORIES.has(lowerCat)) {
-      result.add(lowerCat);
+      resultSet.add(lowerCat);
     } else {
-      console.warn(`Unrecognized gap_reason imported: "${trimmed}". Logging without creating new category string.`);
+      // KEEP IT! Never discard unrecognized input!
+      resultSet.add(trimmed);
+      unrecognizedList.push(trimmed);
     }
   });
 
-  const arr = Array.from(result);
-  return arr.length > 0 ? arr : null;
+  const arr = Array.from(resultSet);
+  return {
+    gap_reasons: arr.length > 0 ? arr : null,
+    unrecognized: unrecognizedList,
+  };
+}
+
+export function parseGapReasons(
+  raw: string | null | undefined,
+  separator?: "," | ";" | "|"
+): string[] | null {
+  return parseGapReasonsDetailed(raw).gap_reasons;
 }
 
 export const DB_COLUMNS = [

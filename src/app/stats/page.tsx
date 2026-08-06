@@ -6,6 +6,7 @@ import {
   formatRateWithThreshold,
   getConnectRateWarning,
 } from "@/lib/rate-utils";
+import { KNOWN_GAP_CATEGORIES } from "@/lib/import-utils";
 import { LeadCallView, ActiveLeadCallData } from "@/components/lead-call-view";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -660,7 +661,10 @@ function BreakdownTableBlock({
 
       <div className="space-y-2">
         {rows.map((r, i) => {
-          const keyVal = r[keyName] || "Unspecified";
+          let keyVal = r[keyName] || "Unspecified";
+          if (keyName === "reason" && keyVal !== "no gap reason recorded" && !KNOWN_GAP_CATEGORIES.has(keyVal.toLowerCase())) {
+            keyVal = `${keyVal} (unrecognized)`;
+          }
           const dialled = r.dialled || 0;
           const connected = r.connected || 0;
           const interested = r.interested || 0;

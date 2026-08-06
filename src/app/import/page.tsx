@@ -10,6 +10,7 @@ import {
   normalizePhone,
   detectGapReasonsSeparator,
   parseGapReasons,
+  parseGapReasonsDetailed,
   parseNullableInt,
   parseNullableFloat,
   SkippedRowInfo,
@@ -55,6 +56,7 @@ export default function ImportPage() {
     duplicatesInFile: number;
     skipped: number;
     skippedRows: SkippedRowInfo[];
+    unrecognizedReasons?: string[];
     logWarning?: string | null;
   } | null>(null);
 
@@ -215,17 +217,20 @@ export default function ImportPage() {
     const seenCidsInFile = new Set<string>();
 
     // 1. Row transforms, validation, and IN-FILE DEDUPLICATION (Part A)
+    const unrecognizedReasonsSet = new Set<string>();
+
     rawRows.forEach((row, idx) => {
-      const getVal = (targetKey: string) => {
-        const header = Object.keys(headerMapping).find((h) => headerMapping[h] === targetKey);
-        return header ? row[header] : undefined;
+      const getVal = (colKey: string) => {
+        const mappedHeader = Object.keys(headerMapping).find(
+          (h) => headerMapping[h] === colKey
+        );
+        return mappedHeader ? row[mappedHeader] : undefined;
       };
 
       const cidRaw = getVal("cid");
+      const cid = cidRaw ? String(cidRaw).trim() : "";
       const nameRaw = getVal("name");
       const phoneRaw = getVal("phone");
-
-      const cid = cidRaw ? String(cidRaw).trim() : "";
       const name = nameRaw ? String(nameRaw).trim() : "";
       const { phone, phone_e164 } = normalizePhone(phoneRaw);
 
@@ -271,7 +276,9 @@ export default function ImportPage() {
       const review_count = parseNullableInt(getVal("review_count"));
       const rating = parseNullableFloat(getVal("rating"));
 
-      const gap_reasons = parseGapReasons(getVal("gap_reasons"), detectedSeparator);
+      const gapParsed = parseGapReasonsDetailed(getVal("gap_reasons"));
+      const gap_reasons = gapParsed.gap_reasons;
+      gapParsed.unrecognized.forEach((r) => unrecognizedReasonsSet.add(r));
 
       validRecords.push({
         owner: ownerId,
@@ -365,6 +372,7 @@ export default function ImportPage() {
       duplicatesInFile: duplicatesInFileCount,
       skipped: skippedCount,
       skippedRows: skippedRowsList,
+      unrecognizedReasons: Array.from(unrecognizedReasonsSet),
       logWarning,
     });
 
@@ -586,6 +594,20 @@ export default function ImportPage() {
               <div className="p-3 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-300 text-xs flex items-start space-x-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
                 <span className="leading-relaxed">{importSummary.logWarning}</span>
+              </div>
+            )}
+
+            {importSummary.unrecognizedReasons && importSummary.unrecognizedReasons.length > 0 && (
+              <div className="p-3 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-300 text-xs flex items-start space-x-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold">
+                    {importSummary.unrecognizedReasons.length} unrecognized gap reason(s) detected:
+                  </div>
+                  <div className="font-mono text-[11px] text-amber-200">
+                    {importSummary.unrecognizedReasons.join(", ")}
+                  </div>
+                </div>
               </div>
             )}
 
