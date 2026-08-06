@@ -5,48 +5,49 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const email = body?.email;
+    const { email, password } = body || {};
 
-    if (!email || typeof email !== "string") {
+    if (!email || !password || typeof email !== "string" || typeof password !== "string") {
       return NextResponse.json(
-        { error: "Invalid or missing email parameter." },
-        { status: 400 }
+        { error: "Invalid email or password." },
+        { status: 401 }
       );
     }
 
     const trimmedEmail = email.trim().toLowerCase();
 
-    // Server-side allowlist enforcement
+    // 1. Server-side allowlist enforcement
     if (!isEmailAllowed(trimmedEmail)) {
+      // Security discipline: return the identical status and error message as invalid credentials
       return NextResponse.json(
-        { error: "Access denied. Email is not on the authorized allowlist." },
-        { status: 403 }
+        { error: "Invalid email or password." },
+        { status: 401 }
       );
     }
 
+    // 2. Authenticate against Supabase with email + password
     const supabase = await createClient();
-    const origin = new URL(request.url).origin;
-
-    // Send magic link server-side only
-    const { error } = await supabase.auth.signInWithOtp({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
-      options: {
-        emailRedirectTo: `${origin}/auth/callback`,
-      },
+      password,
     });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error || !data.user) {
+      return NextResponse.json(
+        { error: "Invalid email or password." },
+        { status: 401 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Magic link sent successfully. Please check your inbox.",
+      message: "Signed in successfully.",
+      redirect: "/",
     });
-  } catch (err: any) {
+  } catch {
     return NextResponse.json(
-      { error: err.message || "An unexpected server error occurred." },
-      { status: 500 }
+      { error: "Invalid email or password." },
+      { status: 401 }
     );
   }
 }

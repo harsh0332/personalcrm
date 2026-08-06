@@ -51,10 +51,9 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isLoginPage = request.nextUrl.pathname === "/login";
-  const isAuthCallback = request.nextUrl.pathname.startsWith("/auth/");
   const isCheckEmailApi = request.nextUrl.pathname.startsWith("/api/auth/");
 
-  if (isAuthCallback || isCheckEmailApi) {
+  if (isCheckEmailApi) {
     return response;
   }
 
