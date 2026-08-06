@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#09090b"/>
+      <stop offset="100%" stop-color="#18181b"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark Background Canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Outer Glow Ring -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#059669" stroke-width="16" opacity="0.4"/>
+  
+  <!-- Inner Emerald Circle Badge -->
+  <circle cx="256" cy="256" r="128" fill="url(#emeraldGrad)"/>
+
+  <!-- White Phone Receptor Symbol -->
+  <path d="M 200 170 C 200 170 215 200 230 215 C 240 225 255 210 265 220 L 290 245 C 300 255 285 270 295 280 C 310 295 340 310 340 310 C 340 310 355 295 365 305 L 380 320 C 390 330 390 345 380 355 C 360 375 320 380 270 330 C 220 280 205 220 185 190 C 175 180 175 165 185 155 L 200 140 C 210 130 225 130 235 140 Z" fill="#09090b" transform="rotate(-15 256 256) translate(-10 10)"/>
+  <path d="M 230 180 C 245 195 270 220 285 235 C 290 240 295 235 300 240 L 315 255 C 320 260 315 265 310 270 C 290 290 260 270 235 245 C 210 220 190 190 210 170 C 215 165 220 160 225 165 Z" fill="#ffffff" transform="rotate(-15 256 256) translate(-10 10)"/>
+</svg>

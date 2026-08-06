@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { calculateNextActionAt } from "@/lib/call-utils";
 import { Clock, Calendar, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { enqueueOfflineDisposition } from "@/lib/offline-queue";
 
 export interface DispositionItem {
   code: string;
@@ -121,6 +122,25 @@ export function DispositionSheet({
       const shouldPark = disp.code === "no_answer" && noAnswerCount >= 3;
       const finalNextStatus = shouldPark ? "parked" : disp.next_status;
 
+      // OFFLINE QUEUE CHECK: If offline, queue in IndexedDB immediately without throwing network errors
+      if (typeof window !== "undefined" && !navigator.onLine) {
+        await enqueueOfflineDisposition({
+          lead_id: leadId,
+          lead_name: leadName,
+          owner: ownerId || "offline_owner",
+          disposition: disp.code,
+          note: note.trim() || null,
+          followup_due_at: nextActionAt,
+          followup_reason: note.trim() || `Followup for ${disp.label}`,
+          rating: null,
+          call_duration_seconds: durationSec || 0,
+        });
+
+        setSaving(false);
+        onSuccess(finalNextStatus || "updated", shouldPark);
+        return;
+      }
+
       // 1. INSERT into activities (kind, disposition, duration_sec, note, occurred_at, performed_by)
       const { error: actErr } = await supabase.from("activities").insert({
         owner: ownerId,
@@ -134,6 +154,24 @@ export function DispositionSheet({
       });
 
       if (actErr) {
+        // Fallback: If error is due to network loss, enqueue to offline queue
+        if (typeof window !== "undefined" && !navigator.onLine) {
+          await enqueueOfflineDisposition({
+            lead_id: leadId,
+            lead_name: leadName,
+            owner: ownerId || "offline_owner",
+            disposition: disp.code,
+            note: note.trim() || null,
+            followup_due_at: nextActionAt,
+            followup_reason: note.trim() || `Followup for ${disp.label}`,
+            rating: null,
+            call_duration_seconds: durationSec || 0,
+          });
+          setSaving(false);
+          onSuccess(finalNextStatus || "updated", shouldPark);
+          return;
+        }
+
         setErrorMsg(`Failed to record call activity: ${actErr.message}`);
         setSaving(false);
         return;
