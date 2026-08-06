@@ -121,7 +121,7 @@ export function DispositionSheet({
       const shouldPark = disp.code === "no_answer" && noAnswerCount >= 3;
       const finalNextStatus = shouldPark ? "parked" : disp.next_status;
 
-      // 1. INSERT into activities (kind, disposition, duration_sec, note, occurred_at)
+      // 1. INSERT into activities (kind, disposition, duration_sec, note, occurred_at, performed_by)
       const { error: actErr } = await supabase.from("activities").insert({
         owner: ownerId,
         lead_id: leadId,
@@ -130,12 +130,24 @@ export function DispositionSheet({
         duration_sec: durationSec || 0,
         note: note.trim() || null,
         occurred_at: nowIso,
+        performed_by: ownerId,
       });
 
       if (actErr) {
         setErrorMsg(`Failed to record call activity: ${actErr.message}`);
         setSaving(false);
         return;
+      }
+
+      // 1.5. CLOSE EXISTING OPEN FOLLOW-UPS FOR THIS LEAD (done_at = now)
+      const { error: closeFllwErr } = await supabase
+        .from("followups")
+        .update({ done_at: nowIso })
+        .eq("lead_id", leadId)
+        .is("done_at", null);
+
+      if (closeFllwErr) {
+        console.error("Warning closing open followups:", closeFllwErr.message);
       }
 
       // 2. UPDATE leads table (attempts, last_called_at, status, do_not_call, next_action_at, updated_at)
