@@ -1,16 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { Mail, Lock, AlertCircle, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Mail, Lock, AlertCircle, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+import { Suspense } from "react";
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("message") === "expired") {
+      setNotice("Your session has expired or is invalid. Please sign in again.");
+    }
+  }, [searchParams]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +59,13 @@ export default function LoginPage() {
             Sign in to access your calling CRM workspace
           </p>
         </div>
+
+        {notice && (
+          <div className="p-4 rounded-lg flex items-start space-x-3 text-sm border bg-amber-950/60 border-amber-800 text-amber-300">
+            <Info className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+            <div>{notice}</div>
+          </div>
+        )}
 
         {error && (
           <div className="p-4 rounded-lg flex items-start space-x-3 text-sm border bg-rose-950/50 border-rose-800 text-rose-300">
@@ -125,5 +142,13 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-500 text-xs font-mono">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

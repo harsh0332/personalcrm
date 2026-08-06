@@ -309,6 +309,17 @@ export default function TodayPage() {
             </div>
           </div>
         </div>
+
+        {/* DASHBOARD ACCESS LINK BANNER */}
+        <div className="max-w-md mx-auto mt-2 pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+          <span className="text-[11px] text-zinc-400 font-medium">Session & Funnel Stats</span>
+          <Link
+            href="/stats"
+            className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+          >
+            📊 View Full Dashboard & Analytics →
+          </Link>
+        </div>
       </div>
 
       {/* MAIN CONTENT AREA */}

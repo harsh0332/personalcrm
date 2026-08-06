@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { generateCallScript } from "@/lib/call-script-templates";
+import { ChevronDown } from "lucide-react";
 import {
   DEFAULT_WHATSAPP_MESSAGE,
   getSuggestedOpener,
@@ -235,15 +237,86 @@ export function LeadCallView({
           </div>
         )}
 
-        {/* SUGGESTED OPENER BOX */}
-        <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl space-y-1">
-          <span className="text-[10px] text-emerald-400/90 uppercase tracking-wider font-mono font-bold block">
-            Suggested Opener Prompt
-          </span>
-          <p className="text-xs text-zinc-200 leading-relaxed italic">
-            &quot;{suggestedOpener}&quot;
-          </p>
-        </div>
+        {/* 5-BLOCK PER-LEAD CALL SCRIPT */}
+        {(() => {
+          const script = generateCallScript({
+            name: lead.name,
+            area: lead.area,
+            category: lead.category,
+            rating: lead.rating,
+            review_count: lead.review_count,
+            gap_reasons: lead.gap_reasons,
+          });
+
+          return (
+            <div className="space-y-3 pt-1">
+              {/* BLOCK A: OPENER (ABOVE THE FOLD - 3 SHORT LINES MAX, NO PITCH) */}
+              <div className="p-3 bg-zinc-900 border border-emerald-800/80 rounded-xl space-y-1 text-xs">
+                <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase tracking-wider block">
+                  Block A — Opener (15 Seconds)
+                </span>
+                <p className="text-zinc-100 font-medium leading-tight">{script.opener.line1}</p>
+                <p className="text-zinc-200 leading-tight">{script.opener.line2}</p>
+                <p className="text-emerald-300 font-bold leading-tight pt-0.5">{script.opener.line3}</p>
+              </div>
+
+              {/* BLOCKS B-E: COLLAPSIBLE SCRIPT DETAILS BELOW THE FOLD */}
+              <details className="group bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden text-xs">
+                <summary className="p-3 font-bold text-zinc-300 flex items-center justify-between cursor-pointer list-none select-none hover:bg-zinc-800/50">
+                  <span className="text-[11px] text-zinc-300 uppercase font-mono tracking-wider">
+                    Full Script & Objection Playbook (B–E)
+                  </span>
+                  <span className="text-[10px] text-zinc-500 font-mono group-open:rotate-180 transition-transform">
+                    ▼
+                  </span>
+                </summary>
+
+                <div className="p-3 pt-0 space-y-3 border-t border-zinc-800/60 mt-1">
+                  {/* BLOCK B: WHY THEM (TRUE NUMBERS ONLY) */}
+                  {script.whyThem && (
+                    <div className="space-y-0.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-[10px] text-zinc-400 font-mono font-bold uppercase block">
+                        Block B — Why Them (Compliment)
+                      </span>
+                      <p className="text-zinc-200 leading-relaxed italic">{script.whyThem.text}</p>
+                    </div>
+                  )}
+
+                  {/* BLOCK C: THE OBSERVATION (GAP QUESTION) */}
+                  <div className="space-y-0.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                    <span className="text-[10px] text-amber-400 font-mono font-bold uppercase block">
+                      Block C — The Observation (Question)
+                    </span>
+                    <p className="text-zinc-200 leading-relaxed font-medium">&quot;{script.observation.question}&quot;</p>
+                  </div>
+
+                  {/* BLOCK D: WHAT IT IS COSTING THEM */}
+                  <div className="space-y-0.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                    <span className="text-[10px] text-rose-400 font-mono font-bold uppercase block">
+                      Block D — What It Is Costing Them
+                    </span>
+                    <p className="text-zinc-300 leading-relaxed">{script.costOfProblem.problemStatement}</p>
+                  </div>
+
+                  {/* BLOCK E: IF THEY SAY... (OBJECTIONS) */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[10px] text-sky-400 font-mono font-bold uppercase block">
+                      Block E — If They Say... (Objections)
+                    </span>
+                    <div className="space-y-1.5">
+                      {script.objections.map((obj, i) => (
+                        <div key={i} className="p-2 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1">
+                          <span className="text-[11px] font-bold text-zinc-200 block">{obj.objection}</span>
+                          <p className="text-[11px] text-emerald-300 leading-relaxed">{obj.reply}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          );
+        })()}
       </div>
 
       {/* LOWER HALF: CALL ACTIONS & TRAI WARNING (1-THUMB OPERABLE) */}

@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, Users, Upload, BarChart3 } from "lucide-react";
+import { Calendar, Users, Upload, BarChart3, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { name: "Today", href: "/", icon: Calendar },
   { name: "Leads", href: "/leads", icon: Users },
   { name: "Import", href: "/import", icon: Upload },
-  { name: "Stats", href: "/stats", icon: BarChart3 },
+  { name: "Dashboard", href: "/stats", icon: BarChart3 },
+  { name: "Account", href: "/account", icon: User },
 ];
 
 export function BottomTabBar() {
