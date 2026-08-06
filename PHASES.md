@@ -6,6 +6,6 @@
 3 lead list [x]
 4 call screen [x]
 5 follow-ups [x]
-6 stats
+6 stats [x]
 7 export loop
 8 PWA and calling guardrails
