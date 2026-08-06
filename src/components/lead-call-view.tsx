@@ -218,8 +218,8 @@ export function LeadCallView({
           )}
         </div>
 
-        {/* GAP REASONS CHIPS (OPENING LINE REASONS) */}
-        {lead.gap_reasons && lead.gap_reasons.length > 0 && (
+        {/* GAP REASONS CHIPS OR THIN SCRIPT BADGE */}
+        {lead.gap_reasons && lead.gap_reasons.filter((g) => g && g.trim()).length > 0 ? (
           <div className="space-y-1.5 pt-1">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono font-bold block">
               Gap Reasons (Opening Pitch)
@@ -234,6 +234,12 @@ export function LeadCallView({
                 </span>
               ))}
             </div>
+          </div>
+        ) : (
+          <div className="pt-1">
+            <span className="px-2.5 py-1 text-[11px] font-mono font-bold rounded-lg bg-amber-950/80 text-amber-300 border border-amber-800/80 inline-flex items-center gap-1">
+              ⚡ Thin Script — No Known Gap Recorded
+            </span>
           </div>
         )}
 
@@ -264,7 +270,7 @@ export function LeadCallView({
               <details className="group bg-zinc-900/90 border border-zinc-800 rounded-xl overflow-hidden text-xs">
                 <summary className="p-3 font-bold text-zinc-300 flex items-center justify-between cursor-pointer list-none select-none hover:bg-zinc-800/50">
                   <span className="text-[11px] text-zinc-300 uppercase font-mono tracking-wider">
-                    Full Script & Objection Playbook (B–E)
+                    Full Script & Objection Playbook {script.costOfProblem ? "(B–E)" : "(B, C, E)"}
                   </span>
                   <span className="text-[10px] text-zinc-500 font-mono group-open:rotate-180 transition-transform">
                     ▼
@@ -282,21 +288,23 @@ export function LeadCallView({
                     </div>
                   )}
 
-                  {/* BLOCK C: THE OBSERVATION (GAP QUESTION) */}
+                  {/* BLOCK C: THE OBSERVATION (OPEN QUESTION IF NO GAP) */}
                   <div className="space-y-0.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
                     <span className="text-[10px] text-amber-400 font-mono font-bold uppercase block">
-                      Block C — The Observation (Question)
+                      Block C — {script.observation.isOpenQuestion ? "Open Discovery Question (No Known Gap)" : "The Observation (Question)"}
                     </span>
                     <p className="text-zinc-200 leading-relaxed font-medium">&quot;{script.observation.question}&quot;</p>
                   </div>
 
-                  {/* BLOCK D: WHAT IT IS COSTING THEM */}
-                  <div className="space-y-0.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
-                    <span className="text-[10px] text-rose-400 font-mono font-bold uppercase block">
-                      Block D — What It Is Costing Them
-                    </span>
-                    <p className="text-zinc-300 leading-relaxed">{script.costOfProblem.problemStatement}</p>
-                  </div>
+                  {/* BLOCK D: WHAT IT IS COSTING THEM (OMITTED ENTIRELY WHEN NO KNOWN GAP) */}
+                  {script.costOfProblem && (
+                    <div className="space-y-0.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-[10px] text-rose-400 font-mono font-bold uppercase block">
+                        Block D — What It Is Costing Them
+                      </span>
+                      <p className="text-zinc-300 leading-relaxed">{script.costOfProblem.problemStatement}</p>
+                    </div>
+                  )}
 
                   {/* BLOCK E: IF THEY SAY... (OBJECTIONS) */}
                   <div className="space-y-2 pt-1">

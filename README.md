@@ -15,10 +15,24 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 ALLOWED_EMAIL=your-email@example.com
 ```
 
-## Features & Progress
+## Database Restoration Procedure (From Full Backup CSVs)
 
-- **Phase 0**: Scaffolding, 4-tab mobile shell, dark theme.
-- **Phase 1**: Database schema (`leads`, `activities`, `followups`, `imports`, `dispositions`), RLS policies, unique `(owner, cid)` deduplication, and single-user magic link auth allowlist.
+If your Supabase database is paused, deleted, or lost, you can fully restore your complete call history using the CSV files downloaded via **Export Everything** on the Account screen:
+
+1. **Prerequisite**: Initialize the database schema by executing the SQL migrations in `supabase/migrations/` (or running `npx supabase db push`).
+2. **Restore Leads (`calldesk_backup_leads_YYYY-MM-DD.csv`)**:
+   - Go to `/import` in the CallDesk app or use Supabase Table Editor.
+   - Upload `calldesk_backup_leads_YYYY-MM-DD.csv`.
+   - The app will restore all 169+ leads with their original CIDs, tiers, campaign assignments (`Indore Dentists`), ratings, and review counts.
+3. **Restore Call Activity History & Outcomes (`calldesk_backup_activities_YYYY-MM-DD.csv`)**:
+   - Open Supabase SQL Editor / Table Editor for `activities` table.
+   - Import `calldesk_backup_activities_YYYY-MM-DD.csv` into `public.activities`.
+   - All call logs (disposition codes, call durations, notes, timestamps, and caller IDs) are restored 100%.
+4. **Restore Follow-up Commitments (`calldesk_backup_followups_YYYY-MM-DD.csv`)**:
+   - Import `calldesk_backup_followups_YYYY-MM-DD.csv` into `public.followups`.
+   - All scheduled follow-up dates and reasons are restored.
+
+> **Note**: Both the Outcomes CSV and Full Backup CSVs include a **UTF-8 Byte Order Mark (`\uFEFF`)** so Devanagari/Hindi business names (e.g. `दृष्टि डेंटल क्लिनिक`) open cleanly in Microsoft Excel on Mac and Windows without text garbling.
 
 ## Local Development
 
@@ -37,11 +51,6 @@ ALLOWED_EMAIL=your-email@example.com
 ## Database Migrations
 
 Database migrations are managed via Supabase CLI and committed in `supabase/migrations/`.
-
-To create a new migration:
-```bash
-npx supabase migration new <migration_name>
-```
 
 ## Production Build & Verification
 

@@ -20,7 +20,9 @@ import {
 import { Button } from "@/components/ui/button";
 
 function downloadCsv(filename: string, csvContent: string) {
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  // Prepend UTF-8 BOM (\uFEFF) so Excel on Mac and Windows opens Devanagari/Hindi names cleanly
+  const bomCsv = "\uFEFF" + csvContent;
+  const blob = new Blob([bomCsv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.setAttribute("href", url);
@@ -167,15 +169,19 @@ export default function AccountPage() {
       const leadIds = leadsData.map((l) => l.id);
       const { data: activitiesData } = await supabase
         .from("activities")
-        .select("lead_id, disposition, occurred_at")
+        .select("lead_id, disposition, note, occurred_at")
         .in("lead_id", leadIds)
         .eq("kind", "call")
         .order("occurred_at", { ascending: false });
 
       const recentDispMap: Record<string, string> = {};
+      const recentNoteMap: Record<string, string> = {};
       (activitiesData || []).forEach((act) => {
         if (!recentDispMap[act.lead_id]) {
           recentDispMap[act.lead_id] = act.disposition;
+        }
+        if (!recentNoteMap[act.lead_id] && act.note) {
+          recentNoteMap[act.lead_id] = act.note;
         }
       });
 
@@ -188,10 +194,11 @@ export default function AccountPage() {
         "status",
         "attempts",
         "last_called_at",
-        "most_recent_disposition",
+        "outcome",
+        "notes",
       ];
 
-      const csvRows = [headers.join(",")];
+      const csvRows = [headers.map((h) => `"${h}"`).join(",")];
 
       leadsData.forEach((lead) => {
         const row = [
@@ -203,6 +210,7 @@ export default function AccountPage() {
           escapeCsvCell(lead.attempts),
           escapeCsvCell(lead.last_called_at || ""),
           escapeCsvCell(recentDispMap[lead.id] || lead.status),
+          escapeCsvCell(recentNoteMap[lead.id] || ""),
         ];
         csvRows.push(row.join(","));
       });
@@ -217,7 +225,7 @@ export default function AccountPage() {
     }
   };
 
-  // 2. EXPORT EVERYTHING (FULL BACKUP)
+  // 2. EXPORT EVERYTHING (FULL BACKUP WITH LEADS, ACTIVITIES, AND FOLLOWUPS + UTF-8 BOM)
   const handleExportBackup = async () => {
     setPreparingBackup(true);
     setExportMsg(null);
@@ -228,6 +236,11 @@ export default function AccountPage() {
 
       const { data: allActivities, error: aErr } = await supabase.from("activities").select("*");
       if (aErr) throw aErr;
+
+      const { data: allFollowups, error: fErr } = await supabase.from("followups").select("*");
+      if (fErr) throw fErr;
+
+      const dateStr = new Date().toISOString().slice(0, 10);
 
       // 1. Leads Backup CSV
       const leadHeaders = [
@@ -268,8 +281,7 @@ export default function AccountPage() {
         );
       });
 
-      const leadsFilename = `calldesk_full_leads_backup_${new Date().toISOString().slice(0, 10)}.csv`;
-      downloadCsv(leadsFilename, leadCsvRows.join("\n"));
+      downloadCsv(`calldesk_backup_leads_${dateStr}.csv`, leadCsvRows.join("\n"));
 
       // 2. Activities Backup CSV
       const actHeaders = [
@@ -298,13 +310,38 @@ export default function AccountPage() {
         );
       });
 
-      const actsFilename = `calldesk_full_activities_backup_${new Date().toISOString().slice(0, 10)}.csv`;
       setTimeout(() => {
-        downloadCsv(actsFilename, actCsvRows.join("\n"));
-      }, 500);
+        downloadCsv(`calldesk_backup_activities_${dateStr}.csv`, actCsvRows.join("\n"));
+      }, 400);
+
+      // 3. Followups Backup CSV
+      const fllwHeaders = ["id", "lead_id", "owner", "due_at", "reason", "done_at", "created_at"];
+      const fllwCsvRows = [fllwHeaders.join(",")];
+      (allFollowups || []).forEach((f) => {
+        fllwCsvRows.push(
+          [
+            escapeCsvCell(f.id),
+            escapeCsvCell(f.lead_id),
+            escapeCsvCell(f.owner),
+            escapeCsvCell(f.due_at),
+            escapeCsvCell(f.reason),
+            escapeCsvCell(f.done_at),
+            escapeCsvCell(f.created_at),
+          ].join(",")
+        );
+      });
+
+      setTimeout(() => {
+        downloadCsv(`calldesk_backup_followups_${dateStr}.csv`, fllwCsvRows.join("\n"));
+      }, 800);
+
+      // Save last backup timestamp in localStorage
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("calldesk_last_full_backup_at", new Date().toISOString());
+      }
 
       setExportMsg(
-        `Full Backup Triggered! Downloaded ${allLeads?.length || 0} leads and ${allActivities?.length || 0} activity logs.`
+        `Full Backup Triggered! Downloaded ${allLeads?.length || 0} leads, ${allActivities?.length || 0} activity logs, and ${allFollowups?.length || 0} follow-up commitments.`
       );
     } catch (err: any) {
       setExportMsg(`Backup failed: ${err.message}`);

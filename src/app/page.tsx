@@ -87,6 +87,23 @@ export default function DashboardLandingPage() {
   // Detailed Funnel Stats Data
   const [statsData, setStatsData] = useState<any>(null);
 
+  // Backup Tracker State
+  const [lastBackupDaysAgo, setLastBackupDaysAgo] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const lastBackupStr = window.localStorage.getItem("calldesk_last_full_backup_at");
+      if (!lastBackupStr) {
+        setLastBackupDaysAgo(999);
+      } else {
+        const lastBackupDate = new Date(lastBackupStr);
+        const diffMs = Date.now() - lastBackupDate.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 3600 * 24));
+        setLastBackupDaysAgo(diffDays);
+      }
+    }
+  }, []);
+
   // Action Lists
   const [overdueList, setOverdueList] = useState<ActionListItem[]>([]);
   const [dueTomorrowList, setDueTomorrowList] = useState<ActionListItem[]>([]);
@@ -559,6 +576,30 @@ export default function DashboardLandingPage() {
                   <ArrowRight className="w-4 h-4 stroke-[3]" />
                 </Button>
               </Link>
+
+              {/* BACKUP STATUS / OVERDUE WARNING BANNER */}
+              {lastBackupDaysAgo !== null && (
+                <div className="pt-1">
+                  {lastBackupDaysAgo > 7 ? (
+                    <div className="p-2.5 bg-amber-950/80 border border-amber-800 rounded-xl text-amber-200 text-xs flex items-center justify-between shadow-md">
+                      <span className="font-semibold flex items-center gap-1.5 text-amber-300">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        Backup Overdue ({lastBackupDaysAgo === 999 ? "Never backed up" : `${lastBackupDaysAgo}d ago`})
+                      </span>
+                      <Link
+                        href="/account"
+                        className="px-2 py-1 bg-amber-800 hover:bg-amber-700 text-amber-100 font-bold text-[11px] rounded transition-colors"
+                      >
+                        Tap to Export →
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-zinc-500 font-mono text-center">
+                      Last full backup: {lastBackupDaysAgo === 0 ? "Today" : `${lastBackupDaysAgo} day(s) ago`}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ------------------------------------------------------------- */}
