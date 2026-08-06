@@ -142,22 +142,32 @@ export default function StatsPage() {
         .order("last_called_at", { ascending: true })
         .limit(5);
 
-      // d) Pending Quotes (status = 'quote_sent')
+      // d) Pending Quotes (status = 'quote_sent') - Order by last_called_at (immutable call time)
       const { data: quotesData } = await supabase
         .from("leads")
         .select("*")
         .eq("status", "quote_sent")
-        .order("updated_at", { ascending: false })
+        .order("last_called_at", { ascending: false })
         .limit(5);
 
-      // e) Won This Month (status = 'won', updated_at >= startOfMonth)
-      const { data: wonData } = await supabase
-        .from("leads")
-        .select("*")
-        .eq("status", "won")
-        .gte("updated_at", startOfMonth)
-        .order("updated_at", { ascending: false })
-        .limit(5);
+      // e) Won This Month (activities disposition = 'converted' with occurred_at >= startOfMonth)
+      const { data: wonActivities } = await supabase
+        .from("activities")
+        .select("lead_id, occurred_at")
+        .eq("kind", "call")
+        .eq("disposition", "converted")
+        .gte("occurred_at", startOfMonth)
+        .order("occurred_at", { ascending: false });
+
+      let wonData: any[] = [];
+      if (wonActivities && wonActivities.length > 0) {
+        const wonLeadIds = Array.from(new Set(wonActivities.map((a: any) => a.lead_id)));
+        const { data: fetchedWonLeads } = await supabase
+          .from("leads")
+          .select("*")
+          .in("id", wonLeadIds);
+        wonData = fetchedWonLeads || [];
+      }
 
       setOverdueList(
         (overdueData || [])
