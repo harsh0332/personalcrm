@@ -21,6 +21,13 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  const isLoginPage = request.nextUrl.pathname === "/login";
+  const isCheckEmailApi = request.nextUrl.pathname.startsWith("/api/auth/");
+
+  if (isCheckEmailApi) {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -46,15 +53,21 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Guard against middleware hanging / timing out on network delay with a strict 2.5s timeout
+  let user: any = null;
+  try {
+    const authPromise = supabase.auth.getUser();
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), 2500)
+    );
 
-  const isLoginPage = request.nextUrl.pathname === "/login";
-  const isCheckEmailApi = request.nextUrl.pathname.startsWith("/api/auth/");
-
-  if (isCheckEmailApi) {
-    return response;
+    const authResult: any = await Promise.race([authPromise, timeoutPromise]);
+    if (authResult && authResult.data && authResult.data.user) {
+      user = authResult.data.user;
+    }
+  } catch (err) {
+    console.error("Middleware auth check failed:", err);
+    user = null;
   }
 
   const isAuthenticated = user && isEmailAllowed(user.email);
@@ -74,6 +87,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
   ],
 };
