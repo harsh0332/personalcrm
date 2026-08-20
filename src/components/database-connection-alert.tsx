@@ -30,6 +30,7 @@ export function DatabaseConnectionAlert({
   const projectRef =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.replace("https://", "").split(".")[0] ||
     "sfvejlxbjgcrrmpgkanh";
+  const isPausedCandidate = isDatabasePausedError(errorMsg);
 
   return (
     <div className="p-4 bg-zinc-900 border border-amber-800/80 rounded-2xl space-y-4 shadow-xl text-zinc-100 max-w-md mx-auto w-full my-4">
