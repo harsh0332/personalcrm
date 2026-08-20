@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createClient } from "@supabase/supabase-js";
 import { generateCallScript } from "../src/lib/call-script-templates.ts";
 
 const envContent = fs.readFileSync(path.join(process.cwd(), ".env.local"), "utf-8");
@@ -13,7 +12,11 @@ envContent.split("\n").forEach((line) => {
 const supabaseUrl = envVars.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = envVars.SUPABASE_SERVICE_ROLE_KEY;
 
-const adminClient = createClient(supabaseUrl, serviceRoleKey);
+const headers = {
+  apikey: serviceRoleKey,
+  Authorization: `Bearer ${serviceRoleKey}`,
+  "Content-Type": "application/json",
+};
 
 async function runPhase10VerificationSuite() {
   console.log("=================================================");
@@ -48,13 +51,10 @@ async function runPhase10VerificationSuite() {
     // -----------------------------------------------------------------
     console.log("--- CHECK 2: SCRIPT FOR LEADS WITH NO GAP REASONS ---");
 
-    // Fetch live lead with no gap reasons
-    const { data: noGapLeads } = await adminClient
-      .from("leads")
-      .select("name, area, category, rating, review_count, gap_reasons")
-      .or("gap_reasons.is.null,gap_reasons.eq.{}");
+    const res = await fetch(`${supabaseUrl}/rest/v1/leads?select=name,area,category,rating,review_count,gap_reasons&or=(gap_reasons.is.null,gap_reasons.eq.{})`, { headers });
+    const noGapLeads = await res.json();
 
-    const sampleNoGapLead = (noGapLeads && noGapLeads.length > 0)
+    const sampleNoGapLead = (Array.isArray(noGapLeads) && noGapLeads.length > 0)
       ? noGapLeads[0]
       : {
           name: "Apollo Hospitals",
@@ -107,9 +107,14 @@ async function runPhase10VerificationSuite() {
     // CHECK 4: FULL BACKUP SCOPE & ROW COUNTS MATCH AGAINST SQL
     // -----------------------------------------------------------------
     console.log("--- CHECK 4: FULL BACKUP SCOPE & LIVE SQL COUNT RECONCILIATION ---");
-    const { count: sqlLeadsCount } = await adminClient.from("leads").select("id", { count: "exact", head: true });
-    const { count: sqlActsCount } = await adminClient.from("activities").select("id", { count: "exact", head: true });
-    const { count: sqlFllwCount } = await adminClient.from("followups").select("id", { count: "exact", head: true });
+    const lRes = await fetch(`${supabaseUrl}/rest/v1/leads?select=id`, { headers: { ...headers, Prefer: "count=exact" } });
+    const sqlLeadsCount = parseInt(lRes.headers.get("content-range")?.split("/")[1] || "0", 10);
+
+    const aRes = await fetch(`${supabaseUrl}/rest/v1/activities?select=id`, { headers: { ...headers, Prefer: "count=exact" } });
+    const sqlActsCount = parseInt(aRes.headers.get("content-range")?.split("/")[1] || "0", 10);
+
+    const fRes = await fetch(`${supabaseUrl}/rest/v1/followups?select=id`, { headers: { ...headers, Prefer: "count=exact" } });
+    const sqlFllwCount = parseInt(fRes.headers.get("content-range")?.split("/")[1] || "0", 10);
 
     console.log(`SQL Live Database Record Counts:`);
     console.log(` - Leads      : ${sqlLeadsCount}`);
@@ -130,7 +135,7 @@ async function runPhase10VerificationSuite() {
     // CHECK 5: UTF-8 BOM & DEVANAGARI EXCEL COMPATIBILITY PROOF
     // -----------------------------------------------------------------
     console.log("--- CHECK 5: UTF-8 BOM & DEVANAGARI HINDI EXCEL PROOF ---");
-    const testDevanagariName = "दृष्टि डेंटल स्टुडियो & इम्प्लांट सेंटर";
+    const testDevanagariName = "दृष्टि डेंटल स्टुдио & इम्प्लांट सेंटर";
     const sampleCsvString = `"cid","name"\n"0x123","${testDevanagariName}"`;
     const bomPrefixedCsv = "\uFEFF" + sampleCsvString;
 

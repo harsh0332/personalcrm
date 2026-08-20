@@ -27,6 +27,7 @@ import {
   Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ImportHistory } from "@/components/import-history";
 
 interface ImportRecord {
   id: string;
@@ -746,70 +747,8 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* RECENT IMPORTS HISTORY */}
-      <div className="space-y-3 pt-4 border-t border-zinc-800">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Recent Imports (Last 5)
-          </h2>
-          <button
-            onClick={fetchRecentImports}
-            className="text-zinc-500 hover:text-zinc-300 p-1"
-            title="Refresh history"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-
-        <div className="overflow-x-auto border border-zinc-800 rounded-lg bg-zinc-900">
-          <table className="w-full text-[11px] text-left whitespace-nowrap text-zinc-300">
-            <thead className="bg-zinc-950 text-zinc-400 font-mono border-b border-zinc-800">
-              <tr>
-                <th className="p-2 border-r border-zinc-800">File</th>
-                <th className="p-2 border-r border-zinc-800">Campaign / Run</th>
-                <th className="p-2 border-r border-zinc-800">Total</th>
-                <th className="p-2 border-r border-zinc-800 text-emerald-400">Inserted</th>
-                <th className="p-2 border-r border-zinc-800 text-amber-400">Already Existed</th>
-                <th className="p-2 border-r border-zinc-800 text-purple-400">File Dupes</th>
-                <th className="p-2 text-rose-400">Skipped</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {recentImports.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-4 text-center text-zinc-500 text-xs">
-                    No recent import history recorded.
-                  </td>
-                </tr>
-              ) : (
-                recentImports.map((imp) => (
-                  <tr key={imp.id} className="hover:bg-zinc-800/30 font-mono">
-                    <td className="p-2 border-r border-zinc-800 text-zinc-200 font-sans max-w-[100px] truncate">
-                      {imp.filename}
-                    </td>
-                    <td className="p-2 border-r border-zinc-800 text-emerald-400 max-w-[100px] truncate">
-                      {imp.run_id || "-"}
-                    </td>
-                    <td className="p-2 border-r border-zinc-800 text-zinc-300">
-                      {imp.total_rows}
-                    </td>
-                    <td className="p-2 border-r border-zinc-800 text-emerald-300 font-bold">
-                      {imp.inserted}
-                    </td>
-                    <td className="p-2 border-r border-zinc-800 text-amber-300">
-                      {imp.duplicates}
-                    </td>
-                    <td className="p-2 border-r border-zinc-800 text-purple-300">
-                      {imp.duplicates_in_file ?? 0}
-                    </td>
-                    <td className="p-2 text-rose-300">{imp.skipped}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* IMPORT HISTORY & BATCH CLEANUP */}
+      <ImportHistory />
     </main>
   );
 }
