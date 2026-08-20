@@ -151,7 +151,7 @@ export function ImportHistory() {
             (imp.run_id && imp.run_id.includes(sId))
         );
 
-        if (!isAlreadyRecorded) {
+        if (!isAlreadyRecorded && leadsGroup) {
           let calledC = 0;
           let uncalledC = 0;
           leadsGroup.forEach((l) => {
