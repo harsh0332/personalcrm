@@ -27,7 +27,9 @@ export function DatabaseConnectionAlert({
   onRetry,
   retrying = false,
 }: DatabaseConnectionAlertProps) {
-  const isPausedCandidate = isDatabasePausedError(errorMsg);
+  const projectRef =
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.replace("https://", "").split(".")[0] ||
+    "sfvejlxbjgcrrmpgkanh";
 
   return (
     <div className="p-4 bg-zinc-900 border border-amber-800/80 rounded-2xl space-y-4 shadow-xl text-zinc-100 max-w-md mx-auto w-full my-4">
@@ -40,7 +42,7 @@ export function DatabaseConnectionAlert({
             Database Connection Alert
           </h2>
           <span className="text-[10px] font-mono text-zinc-400">
-            Project: <code className="text-emerald-400 font-bold">oglhztdqdwkbopcldyyl</code> (CallDesk CRM)
+            Project: <code className="text-emerald-400 font-bold">{projectRef}</code> (CallDesk CRM)
           </span>
         </div>
       </div>
@@ -68,7 +70,7 @@ export function DatabaseConnectionAlert({
         </span>
         <ol className="list-decimal list-inside space-y-1.5 text-zinc-300 text-[11px] leading-relaxed">
           <li>
-            Open the <strong className="text-emerald-300">Supabase Dashboard</strong> to unpause/restore project <code className="text-emerald-400">oglhztdqdwkbopcldyyl</code>.
+            Open the <strong className="text-emerald-300">Supabase Dashboard</strong> to unpause/restore project <code className="text-emerald-400">{projectRef}</code>.
           </li>
           <li>
             If you are on patchy mobile data, check internet connection and tap <strong>Retry Connection</strong> below.
