@@ -143,7 +143,7 @@ export function LeadCallView({
   const isAreaFromQuery = lead.area_source?.toLowerCase() === "query";
 
   return (
-    <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col justify-between p-4 max-w-md mx-auto w-full text-zinc-100 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] bg-zinc-950 flex flex-col justify-between p-4 pb-20 max-w-md mx-auto w-full text-zinc-100 overflow-y-auto">
       {/* TOP BAR: BACK & QUEUE COUNT */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-3 shrink-0">
         <Button

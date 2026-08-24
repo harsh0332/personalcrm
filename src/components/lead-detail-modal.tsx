@@ -42,9 +42,9 @@ export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
   const isAreaFromQuery = lead.area_source?.toLowerCase() === "query";
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div
-        className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-2xl sm:rounded-xl max-h-[90vh] overflow-y-auto p-5 space-y-5 text-zinc-200 shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
+        className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-2xl sm:rounded-xl max-h-[92vh] max-h-[92dvh] overflow-y-auto p-5 pb-28 space-y-5 text-zinc-200 shadow-2xl animate-in slide-in-from-bottom-5 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Title and Close Button */}
