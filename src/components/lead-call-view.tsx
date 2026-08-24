@@ -112,6 +112,18 @@ export function LeadCallView({
     };
   }, [handleTabReturn]);
 
+  // Handle hardware/browser back button: close call view and stay on calling list
+  useEffect(() => {
+    window.history.pushState({ inLeadCallView: true }, "");
+    const handlePopState = () => {
+      onClose();
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [onClose]);
+
   const handleCallClick = () => {
     if (!dialablePhone) return;
     setCallStartTime(Date.now());
@@ -127,7 +139,7 @@ export function LeadCallView({
     if (isParked) {
       setUndoNotice("Lead parked after 3 unanswered attempts.");
     } else {
-      setUndoNotice(`Outcome saved (${updatedStatus}). Advancing...`);
+      setUndoNotice(`Outcome saved (${updatedStatus}). Advancing to next lead...`);
     }
 
     setTimeout(() => {
@@ -147,15 +159,15 @@ export function LeadCallView({
       {/* TOP BAR: BACK & QUEUE COUNT */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-3 shrink-0">
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           onClick={onClose}
-          className="text-xs text-zinc-400 hover:text-zinc-100 p-0 h-8"
+          className="text-xs text-zinc-300 hover:text-zinc-100 bg-zinc-900 border-zinc-700 h-8 px-2.5 rounded-lg flex items-center font-medium"
         >
-          <ChevronLeft className="w-4 h-4 mr-1" /> Back to List
+          <ChevronLeft className="w-4 h-4 mr-1" /> Back to Calling List
         </Button>
 
-        <span className="text-xs text-zinc-500 font-mono">
+        <span className="text-xs text-emerald-400 font-mono font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
           Lead {currentIndex} of {totalInQueue}
         </span>
       </div>

@@ -12,6 +12,9 @@ import {
   Loader2,
   X,
   Sparkles,
+  ArrowRight,
+  ChevronLeft,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { enqueueOfflineDisposition } from "@/lib/offline-queue";
@@ -65,6 +68,19 @@ export function DispositionSheet({
       setSavingLabel("");
     }
   }, [isOpen, initialDurationSec]);
+
+  // Intercept phone back button to close sheet safely without page reload
+  useEffect(() => {
+    if (!isOpen) return;
+    window.history.pushState({ inDispositionSheet: true }, "");
+    const handlePopState = () => {
+      onClose();
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     async function loadDispositions() {
@@ -238,26 +254,24 @@ export function DispositionSheet({
     }
   };
 
-  const handleSelectDisposition = useCallback(
-    async (disp: DispositionItem) => {
-      setSelectedDispCode(disp.code);
-      setErrorMsg(null);
+  const handleSelectDisposition = (disp: DispositionItem) => {
+    setSelectedDispCode(disp.code);
+    setErrorMsg(null);
 
-      const needsDatePicker =
-        disp.follow_up_days === null &&
-        (disp.code === "busy_callback" || disp.code === "meeting_fixed");
+    const needsDatePicker =
+      disp.follow_up_days === null &&
+      (disp.code === "busy_callback" || disp.code === "meeting_fixed");
 
-      if (needsDatePicker && !customDate) {
-        const tmr = new Date();
-        tmr.setDate(tmr.getDate() + 1);
-        setCustomDate(tmr.toISOString().split("T")[0]);
-        return;
-      }
+    if (needsDatePicker && !customDate) {
+      const tmr = new Date();
+      tmr.setDate(tmr.getDate() + 1);
+      setCustomDate(tmr.toISOString().split("T")[0]);
+      return;
+    }
 
-      executeRecord(disp);
-    },
-    [customDate]
-  );
+    // Direct save with current note and duration
+    executeRecord(disp);
+  };
 
   const handleQuickDateSelect = (daysFromNow: number) => {
     const d = new Date();
@@ -273,50 +287,61 @@ export function DispositionSheet({
     <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       {/* MODAL SHEET CONTAINER (FULL MOBILE VIEWPORT HEIGHT WITH SAFE SCROLL) */}
       <div
-        className="w-full max-w-lg bg-zinc-950 border-t sm:border border-zinc-800 rounded-t-3xl sm:rounded-2xl h-[92vh] h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col text-zinc-100 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-200"
+        className="w-full max-w-lg bg-zinc-950 border-t sm:border border-zinc-800 rounded-t-3xl sm:rounded-2xl h-[94vh] h-[94dvh] sm:h-auto sm:max-h-[90vh] flex flex-col text-zinc-100 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* PART 1: TOP STICKY HEADER */}
         <div className="shrink-0 p-4 pb-3 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <span className="text-[10px] text-emerald-400 font-mono uppercase font-bold tracking-wider block">
-                LOG CALL OUTCOME
-              </span>
-              <h2 className="text-base font-extrabold text-zinc-50 truncate leading-tight">
-                {leadName}
-              </h2>
+            <div className="flex items-center space-x-2 min-w-0 flex-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClose}
+                className="h-8 px-2 text-zinc-400 hover:text-zinc-100 text-xs shrink-0"
+                title="Back to Call Screen"
+              >
+                <ChevronLeft className="w-4 h-4 mr-0.5" /> Back
+              </Button>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] text-emerald-400 font-mono uppercase font-bold tracking-wider block">
+                  LOG CALL OUTCOME
+                </span>
+                <h2 className="text-sm font-bold text-zinc-50 truncate leading-tight">
+                  {leadName}
+                </h2>
+              </div>
             </div>
 
             <Button
               variant="outline"
               size="sm"
               onClick={onEscapeDidNotCall}
-              className="text-xs text-rose-300 hover:text-rose-200 bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/70 shrink-0 h-8 px-3 rounded-lg font-semibold"
+              className="text-xs text-rose-300 hover:text-rose-200 bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/70 shrink-0 h-8 px-2.5 rounded-lg font-semibold"
             >
               I did not call
             </Button>
           </div>
 
           {/* Approx Duration Row */}
-          <div className="flex items-center justify-between text-xs bg-zinc-900/90 px-3 py-2 rounded-xl border border-zinc-800">
+          <div className="flex items-center justify-between text-xs bg-zinc-900/90 px-3 py-1.5 rounded-xl border border-zinc-800">
             <span className="text-zinc-400 flex items-center gap-1.5 font-medium">
-              <Clock className="w-4 h-4 text-emerald-400" /> Approx. Call Duration
+              <Clock className="w-3.5 h-3.5 text-emerald-400" /> Approx. Call Duration
             </span>
             <div className="flex items-center gap-1.5 font-mono">
               <input
                 type="number"
                 value={durationSec}
                 onChange={(e) => setDurationSec(parseInt(e.target.value, 10) || 0)}
-                className="w-16 px-2 py-1 bg-zinc-950 border border-zinc-700 rounded-lg text-center text-xs text-zinc-100 font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-16 px-2 py-0.5 bg-zinc-950 border border-zinc-700 rounded-lg text-center text-xs text-zinc-100 font-bold focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
               <span className="text-zinc-400 text-xs font-sans">sec</span>
             </div>
           </div>
         </div>
 
-        {/* PART 2: UNIFIED SCROLLABLE BODY (NOTES + DATE PICKER + ALL 10 DISPOSITION BUTTONS) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+        {/* PART 2: UNIFIED SCROLLABLE BODY (NOTES + DATE PICKER + ALL 10 DISPOSITION BUTTONS + EXPLICIT SAVE) */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
           {/* LOUD ERROR BANNER IF ANY */}
           {errorMsg && (
             <div className="p-3 bg-rose-950/90 border-2 border-rose-800 rounded-xl text-rose-200 text-xs space-y-2">
@@ -338,91 +363,126 @@ export function DispositionSheet({
 
           {/* ACTIVE SAVING INDICATOR BANNER */}
           {saving && (
-            <div className="p-3 bg-emerald-950 border border-emerald-700 rounded-xl text-emerald-200 text-xs flex items-center space-x-2.5 animate-pulse shadow-lg">
-              <Loader2 className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
-              <span className="font-semibold">
-                Saving outcome "{savingLabel}" and advancing to next lead...
-              </span>
+            <div className="p-3.5 bg-emerald-950 border-2 border-emerald-500 rounded-xl text-emerald-200 text-xs flex items-center space-x-2.5 shadow-xl animate-pulse">
+              <Loader2 className="w-5 h-5 text-emerald-400 animate-spin shrink-0" />
+              <div className="min-w-0 flex-1">
+                <span className="font-bold text-emerald-300 block text-sm">
+                  Saving "{savingLabel}"...
+                </span>
+                <span className="text-[11px] text-emerald-400">
+                  {note.trim() ? `Note: "${note.trim()}" saved • ` : ""}Advancing to next lead
+                </span>
+              </div>
             </div>
           )}
 
-          {/* Optional Note Field */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-300 font-medium flex items-center justify-between">
-              <span>Call Notes (Optional)</span>
-              <span className="text-[10px] text-zinc-500 font-mono">never blocks save</span>
-            </label>
-            <input
-              type="text"
+          {/* Call Note Field */}
+          <div className="space-y-1.5 bg-zinc-900/50 p-3 rounded-2xl border border-zinc-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-zinc-200 font-bold flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Call Notes (Optional)</span>
+              </label>
+              {note.trim() && (
+                <span className="text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
+                  ✓ Note Ready
+                </span>
+              )}
+            </div>
+            <textarea
+              rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Interested in SEO, follow up next Tuesday..."
-              className="w-full px-3.5 py-2.5 bg-zinc-900/90 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="e.g. Interested in website revamp, call back on Tuesday with quote..."
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-zinc-100 placeholder:text-zinc-600 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none leading-relaxed"
             />
+            <p className="text-[11px] text-zinc-400 font-sans">
+              💡 <span className="text-zinc-300">Note likhne ke baad niche kisi bhi button par tap karein — aapka note aur outcome ek saath turant save ho jayenge.</span>
+            </p>
           </div>
 
-          {/* Date Picker (shown only when busy_callback or meeting_fixed selected) */}
-          {activeDisp &&
-            activeDisp.follow_up_days === null &&
-            (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed") && (
-              <div className="p-3.5 bg-emerald-950/30 border border-emerald-800/80 rounded-2xl space-y-2.5 text-xs">
-                <span className="flex items-center gap-1.5 text-emerald-300 font-bold">
-                  <Calendar className="w-4 h-4 text-emerald-400" /> Pick Follow-up Date for {activeDisp.label}
+          {/* EXPLICIT SAVE ACTION BUTTON (SHOWN WHEN A DISPOSITION OR DATE IS SELECTED) */}
+          {activeDisp && (
+            <div className="p-3 bg-zinc-900 border-2 border-emerald-600 rounded-2xl space-y-2 shadow-lg animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-zinc-400">Selected Outcome:</span>
+                <span className="font-bold text-emerald-400 text-sm bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                  {activeDisp.label}
                 </span>
-
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDateSelect(1)}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    Tomorrow
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDateSelect(3)}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    In 3 Days
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDateSelect(7)}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    Next Week
-                  </button>
-                </div>
-
-                <input
-                  type="date"
-                  value={customDate}
-                  onChange={(e) => setCustomDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-
-                <Button
-                  onClick={() => executeRecord(activeDisp)}
-                  disabled={saving}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-extrabold text-xs h-10 rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-center space-x-1.5"
-                >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4" />
-                  )}
-                  <span>Confirm Date & Save {activeDisp.label}</span>
-                </Button>
               </div>
-            )}
+
+              {note.trim() && (
+                <div className="text-[11px] text-zinc-300 bg-zinc-950 p-2 rounded-lg border border-zinc-800 truncate">
+                  <span className="text-zinc-500 font-mono">Note: </span>
+                  "{note.trim()}"
+                </div>
+              )}
+
+              {/* Date Picker if busy_callback or meeting_fixed */}
+              {activeDisp.follow_up_days === null &&
+                (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed") && (
+                  <div className="space-y-2 pt-1 border-t border-zinc-800">
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-300 font-semibold">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Select Follow-up Date:
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickDateSelect(1)}
+                        className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                      >
+                        Tomorrow
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickDateSelect(3)}
+                        className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                      >
+                        In 3 Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickDateSelect(7)}
+                        className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                      >
+                        Next Week
+                      </button>
+                    </div>
+                    <input
+                      type="date"
+                      value={customDate}
+                      onChange={(e) => setCustomDate(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+              <Button
+                onClick={() => executeRecord(activeDisp)}
+                disabled={saving}
+                className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-extrabold text-xs tracking-wide rounded-xl shadow-lg flex items-center justify-center space-x-2 active:scale-98 transition-transform"
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-zinc-950" />
+                )}
+                <span>
+                  {saving
+                    ? `Saving ${activeDisp.label}...`
+                    : `Save Note & ${activeDisp.label} (Next Lead →)`}
+                </span>
+              </Button>
+            </div>
+          )}
 
           {/* DISPOSITION BUTTONS SECTION */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-emerald-400 block">
-                Tap Disposition to Save & Advance
+                Select Call Outcome (One Tap)
               </label>
-              <span className="text-[10px] text-zinc-500 font-mono">1-tap instant action</span>
+              <span className="text-[10px] text-zinc-500 font-mono">10 standard outcomes</span>
             </div>
 
             {/* 2-COLUMN GRID WITH COMFORTABLE 48PX BUTTON HEIGHT */}
@@ -456,7 +516,7 @@ export function DispositionSheet({
                     disabled={saving}
                     onClick={() => handleSelectDisposition(disp)}
                     className={`p-3 text-left rounded-xl border text-xs min-h-[48px] flex items-center justify-between transition-all active:scale-95 touch-manipulation ${btnStyle} ${
-                      isSelected ? "ring-2 ring-emerald-400 border-transparent" : ""
+                      isSelected ? "ring-2 ring-emerald-400 border-emerald-500 scale-[1.02]" : ""
                     }`}
                   >
                     <span className="leading-snug">{disp.label}</span>
