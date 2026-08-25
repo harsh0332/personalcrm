@@ -1,7 +1,8 @@
 "use client";
 
-import { X, MapPin, Globe, Phone, AlertTriangle, Calendar, Hash, Tag } from "lucide-react";
+import { X, MapPin, Globe, Phone, AlertTriangle, Calendar, Hash, Tag, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getGmbUrl } from "@/lib/gmb-utils";
 
 export interface FullLeadDetails {
   id: string;
@@ -9,6 +10,8 @@ export interface FullLeadDetails {
   name: string;
   phone: string | null;
   phone_e164: string | null;
+  gmb_url?: string | null;
+  place_id?: string | null;
   address: string | null;
   area: string | null;
   area_source: string | null;
@@ -108,6 +111,20 @@ export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
                 <span className="text-zinc-300 leading-snug">{lead.address}</span>
               </div>
             )}
+
+            {/* Google Business Profile / Maps Direct Link */}
+            <div className="flex items-center space-x-2 pt-1 border-t border-zinc-800/50">
+              <MapPin className="w-4 h-4 text-blue-400 shrink-0" />
+              <a
+                href={getGmbUrl(lead)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 hover:underline inline-flex items-center gap-1 font-semibold"
+              >
+                <span>Open Google Business Profile</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
 
             {lead.website && (
               <div className="flex items-center space-x-2 pt-1 border-t border-zinc-800/50">

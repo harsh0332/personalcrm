@@ -22,8 +22,10 @@ import {
   X,
   MapPin,
   Globe,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getGmbUrl } from "@/lib/gmb-utils";
 
 export interface ActiveLeadCallData {
   id: string;
@@ -31,6 +33,11 @@ export interface ActiveLeadCallData {
   name: string;
   phone: string | null;
   phone_e164: string | null;
+  gmb_url?: string | null;
+  place_id?: string | null;
+  address?: string | null;
+  city?: string | null;
+  website?: string | null;
   area: string | null;
   category: string | null;
   tier: string | null;
@@ -227,6 +234,35 @@ export function LeadCallView({
           )}
           {lead.attempts > 0 && (
             <span className="text-zinc-500 font-mono">Attempts: {lead.attempts}</span>
+          )}
+        </div>
+
+        {/* GOOGLE BUSINESS PROFILE (GMB) & WEBSITE QUICK ACTIONS */}
+        <div className="flex items-center flex-wrap gap-2 pt-0.5">
+          <a
+            href={getGmbUrl(lead)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-950/80 hover:bg-blue-900 border border-blue-700/90 text-blue-200 hover:text-white rounded-xl text-xs font-semibold shadow-sm transition-all active:scale-95 touch-manipulation"
+            title="Open Google Business Profile / Google Maps in a new tab"
+          >
+            <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span>Google Business Profile</span>
+            <ExternalLink className="w-3.5 h-3.5 text-blue-400 ml-0.5 shrink-0" />
+          </a>
+
+          {lead.website && (
+            <a
+              href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-950/60 hover:bg-purple-900 border border-purple-800 text-purple-200 hover:text-white rounded-xl text-xs font-medium transition-all active:scale-95"
+              title="Open Website in a new tab"
+            >
+              <Globe className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+              <span className="truncate max-w-[120px]">Website</span>
+              <ExternalLink className="w-3 h-3 text-purple-400 shrink-0" />
+            </a>
           )}
         </div>
 

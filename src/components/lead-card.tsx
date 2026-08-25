@@ -1,4 +1,5 @@
-import { Star, ShieldAlert } from "lucide-react";
+import { Star, ShieldAlert, MapPin, ExternalLink } from "lucide-react";
+import { getGmbUrl } from "@/lib/gmb-utils";
 
 export interface LeadCardData {
   id: string;
@@ -6,6 +7,10 @@ export interface LeadCardData {
   name: string;
   phone: string | null;
   phone_e164: string | null;
+  gmb_url?: string | null;
+  place_id?: string | null;
+  address?: string | null;
+  city?: string | null;
   area: string | null;
   category: string | null;
   tier: string | null;
@@ -82,18 +87,34 @@ export function LeadCard({ lead, onClick }: LeadCardProps) {
           )}
         </div>
 
-        {/* Quiet Status Marker if not 'new' */}
-        {!isStatusNew && (
-          <span className="px-2 py-0.5 text-[10px] rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 uppercase font-mono">
-            {lead.status}
-          </span>
-        )}
+        <div className="flex items-center space-x-2">
+          {/* Quick Google Business Profile Link */}
+          <a
+            href={getGmbUrl(lead)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-950/80 hover:bg-blue-900 border border-blue-800 text-[10px] text-blue-300 hover:text-white transition-colors"
+            title="Open Google Maps / GMB Profile in new tab"
+          >
+            <MapPin className="w-3 h-3 text-blue-400" />
+            <span>GMB</span>
+            <ExternalLink className="w-2.5 h-2.5 text-blue-400" />
+          </a>
 
-        {lead.do_not_call && (
-          <span className="px-1.5 py-0.5 text-[10px] rounded bg-rose-950 text-rose-300 border border-rose-800 flex items-center gap-1 font-mono">
-            <ShieldAlert className="w-3 h-3 text-rose-400" /> DNC
-          </span>
-        )}
+          {/* Quiet Status Marker if not 'new' */}
+          {!isStatusNew && (
+            <span className="px-2 py-0.5 text-[10px] rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 uppercase font-mono">
+              {lead.status}
+            </span>
+          )}
+
+          {lead.do_not_call && (
+            <span className="px-1.5 py-0.5 text-[10px] rounded bg-rose-950 text-rose-300 border border-rose-800 flex items-center gap-1 font-mono">
+              <ShieldAlert className="w-3 h-3 text-rose-400" /> DNC
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Gap Reasons Chips (Always visible without tapping) */}

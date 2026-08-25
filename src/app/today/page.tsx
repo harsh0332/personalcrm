@@ -18,8 +18,11 @@ import {
   Sparkles,
   BarChart3,
   Filter,
+  MapPin,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
+import { getGmbUrl } from "@/lib/gmb-utils";
 
 interface FollowupQueueItem {
   followupId: string;
@@ -623,6 +626,18 @@ function QueueRowCard({
           <Phone className="w-3.5 h-3.5 fill-zinc-950" />
           <span>CALL</span>
         </Button>
+
+        <a
+          href={getGmbUrl(lead)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="h-9 px-3 bg-blue-950/70 hover:bg-blue-900 border border-blue-800 text-blue-300 hover:text-white rounded-lg flex items-center justify-center space-x-1 text-xs font-semibold transition-colors"
+          title="Open Google Maps / GMB Profile in new tab"
+        >
+          <MapPin className="w-3.5 h-3.5 text-blue-400" />
+          <span>GMB</span>
+          <ExternalLink className="w-3 h-3 text-blue-400" />
+        </a>
 
         {onSnooze && (
           <div className="relative">

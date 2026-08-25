@@ -4,6 +4,8 @@ export interface LeadInsertRecord {
   name: string;
   phone: string | null;
   phone_e164: string | null;
+  gmb_url?: string | null;
+  place_id?: string | null;
   address: string | null;
   area: string | null;
   area_source: string | null;
@@ -142,6 +144,7 @@ export const DB_COLUMNS = [
   { key: "cid", label: "CID (Natural Key)", required: true },
   { key: "name", label: "Business Name", required: true },
   { key: "phone", label: "Phone Number", required: true },
+  { key: "gmb_url", label: "Google Business Profile URL (gmbUrl)", required: false },
   { key: "address", label: "Address", required: false },
   { key: "area", label: "Area", required: false },
   { key: "area_source", label: "Area Source", required: false },
@@ -160,12 +163,18 @@ export const DB_COLUMNS = [
 
 export function autoMapHeader(header: string): string | null {
   if (!header) return null;
-  const normalized = header.toLowerCase().replace(/[\s_]+/g, "");
+  const normalized = header.toLowerCase().replace(/[\s_-]+/g, "");
 
   const mappingRules: Record<string, string> = {
     cid: "cid",
     name: "name",
     phone: "phone",
+    gmburl: "gmb_url",
+    gmb: "gmb_url",
+    mapsurl: "gmb_url",
+    googlemapsurl: "gmb_url",
+    googlebusinessprofile: "gmb_url",
+    placeid: "place_id",
     address: "address",
     area: "area",
     areasource: "area_source",
