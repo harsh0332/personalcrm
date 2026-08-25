@@ -15,6 +15,7 @@ import {
   ArrowRight,
   ChevronLeft,
   FileText,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { enqueueOfflineDisposition } from "@/lib/offline-queue";
@@ -56,6 +57,7 @@ export function DispositionSheet({
   const [saving, setSaving] = useState<boolean>(false);
   const [savingLabel, setSavingLabel] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [promptSelectShake, setPromptSelectShake] = useState<boolean>(false);
 
   const supabase = createClient();
 
@@ -66,6 +68,7 @@ export function DispositionSheet({
       setSelectedDispCode(null);
       setSaving(false);
       setSavingLabel("");
+      setPromptSelectShake(false);
     }
   }, [isOpen, initialDurationSec]);
 
@@ -257,6 +260,7 @@ export function DispositionSheet({
   const handleSelectDisposition = (disp: DispositionItem) => {
     setSelectedDispCode(disp.code);
     setErrorMsg(null);
+    setPromptSelectShake(false);
 
     const needsDatePicker =
       disp.follow_up_days === null &&
@@ -273,6 +277,19 @@ export function DispositionSheet({
     executeRecord(disp);
   };
 
+  const handleBottomSaveClick = () => {
+    if (!selectedDispCode) {
+      setPromptSelectShake(true);
+      setTimeout(() => setPromptSelectShake(false), 2000);
+      return;
+    }
+
+    const disp = dispositions.find((d) => d.code === selectedDispCode);
+    if (disp) {
+      executeRecord(disp);
+    }
+  };
+
   const handleQuickDateSelect = (daysFromNow: number) => {
     const d = new Date();
     d.setDate(d.getDate() + daysFromNow);
@@ -285,9 +302,9 @@ export function DispositionSheet({
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* MODAL SHEET CONTAINER (FULL MOBILE VIEWPORT HEIGHT WITH SAFE SCROLL) */}
+      {/* MODAL SHEET CONTAINER */}
       <div
-        className="w-full max-w-lg bg-zinc-950 border-t sm:border border-zinc-800 rounded-t-3xl sm:rounded-2xl h-[94vh] h-[94dvh] sm:h-auto sm:max-h-[90vh] flex flex-col text-zinc-100 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-200"
+        className="w-full max-w-lg bg-zinc-950 border-t sm:border border-zinc-800 rounded-t-3xl sm:rounded-2xl h-[95vh] h-[95dvh] sm:h-auto sm:max-h-[90vh] flex flex-col text-zinc-100 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-6 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* PART 1: TOP STICKY HEADER */}
@@ -340,8 +357,8 @@ export function DispositionSheet({
           </div>
         </div>
 
-        {/* PART 2: UNIFIED SCROLLABLE BODY (NOTES + DATE PICKER + ALL 10 DISPOSITION BUTTONS + EXPLICIT SAVE) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
+        {/* PART 2: UNIFIED SCROLLABLE BODY */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-4">
           {/* LOUD ERROR BANNER IF ANY */}
           {errorMsg && (
             <div className="p-3 bg-rose-950/90 border-2 border-rose-800 rounded-xl text-rose-200 text-xs space-y-2">
@@ -383,107 +400,80 @@ export function DispositionSheet({
                 <FileText className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Call Notes (Optional)</span>
               </label>
-              {note.trim() && (
-                <span className="text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
-                  ✓ Note Ready
+              {note.trim() ? (
+                <span className="text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Note Ready
                 </span>
+              ) : (
+                <span className="text-[10px] text-zinc-500 font-mono">optional</span>
               )}
             </div>
             <textarea
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Interested in website revamp, call back on Tuesday with quote..."
+              placeholder="e.g. They don't want website, budget issue, call back next month..."
               className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-zinc-100 placeholder:text-zinc-600 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none leading-relaxed"
             />
-            <p className="text-[11px] text-zinc-400 font-sans">
-              💡 <span className="text-zinc-300">Note likhne ke baad niche kisi bhi button par tap karein — aapka note aur outcome ek saath turant save ho jayenge.</span>
-            </p>
+            <div className="p-2 bg-zinc-950/80 rounded-lg border border-zinc-800/80 text-[11px] text-zinc-400 leading-snug">
+              👇 <strong className="text-emerald-400">Next Step:</strong> Niche diye gaye 10 outcomes me se ek select karein (jaise <span className="text-zinc-200 font-semibold">Not interested</span>, <span className="text-zinc-200 font-semibold">Interested</span>, ya <span className="text-zinc-200 font-semibold">No answer</span>).
+            </div>
           </div>
 
-          {/* EXPLICIT SAVE ACTION BUTTON (SHOWN WHEN A DISPOSITION OR DATE IS SELECTED) */}
-          {activeDisp && (
-            <div className="p-3 bg-zinc-900 border-2 border-emerald-600 rounded-2xl space-y-2 shadow-lg animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-zinc-400">Selected Outcome:</span>
-                <span className="font-bold text-emerald-400 text-sm bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                  {activeDisp.label}
+          {/* Date Picker if busy_callback or meeting_fixed */}
+          {activeDisp &&
+            activeDisp.follow_up_days === null &&
+            (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed") && (
+              <div className="p-3 bg-emerald-950/40 border-2 border-emerald-600 rounded-2xl space-y-2 text-xs animate-in fade-in">
+                <span className="flex items-center gap-1.5 text-xs text-emerald-300 font-bold">
+                  <Calendar className="w-4 h-4 text-emerald-400" /> Select Follow-up Date for {activeDisp.label}:
                 </span>
-              </div>
-
-              {note.trim() && (
-                <div className="text-[11px] text-zinc-300 bg-zinc-950 p-2 rounded-lg border border-zinc-800 truncate">
-                  <span className="text-zinc-500 font-mono">Note: </span>
-                  "{note.trim()}"
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDateSelect(1)}
+                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDateSelect(3)}
+                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                  >
+                    In 3 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDateSelect(7)}
+                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                  >
+                    Next Week
+                  </button>
                 </div>
-              )}
-
-              {/* Date Picker if busy_callback or meeting_fixed */}
-              {activeDisp.follow_up_days === null &&
-                (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed") && (
-                  <div className="space-y-2 pt-1 border-t border-zinc-800">
-                    <span className="flex items-center gap-1.5 text-xs text-emerald-300 font-semibold">
-                      <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Select Follow-up Date:
-                    </span>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickDateSelect(1)}
-                        className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
-                      >
-                        Tomorrow
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickDateSelect(3)}
-                        className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
-                      >
-                        In 3 Days
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickDateSelect(7)}
-                        className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
-                      >
-                        Next Week
-                      </button>
-                    </div>
-                    <input
-                      type="date"
-                      value={customDate}
-                      onChange={(e) => setCustomDate(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none"
-                    />
-                  </div>
-                )}
-
-              <Button
-                onClick={() => executeRecord(activeDisp)}
-                disabled={saving}
-                className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-extrabold text-xs tracking-wide rounded-xl shadow-lg flex items-center justify-center space-x-2 active:scale-98 transition-transform"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 text-zinc-950" />
-                )}
-                <span>
-                  {saving
-                    ? `Saving ${activeDisp.label}...`
-                    : `Save Note & ${activeDisp.label} (Next Lead →)`}
-                </span>
-              </Button>
-            </div>
-          )}
+                <input
+                  type="date"
+                  value={customDate}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-zinc-100 focus:outline-none"
+                />
+              </div>
+            )}
 
           {/* DISPOSITION BUTTONS SECTION */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-emerald-400 block">
-                Select Call Outcome (One Tap)
+                Select Call Outcome (Tap to Save)
               </label>
-              <span className="text-[10px] text-zinc-500 font-mono">10 standard outcomes</span>
+              <span className="text-[10px] text-zinc-500 font-mono">1-tap saves note & outcome</span>
             </div>
+
+            {promptSelectShake && !selectedDispCode && (
+              <div className="p-2.5 bg-amber-950 border border-amber-600 rounded-xl text-amber-200 text-xs font-bold flex items-center gap-2 animate-bounce">
+                <span>⚠️ Pehle niche kisi ek outcome par tap karein (e.g. Not interested)!</span>
+              </div>
+            )}
 
             {/* 2-COLUMN GRID WITH COMFORTABLE 48PX BUTTON HEIGHT */}
             <div className="grid grid-cols-2 gap-2">
@@ -528,6 +518,42 @@ export function DispositionSheet({
               })}
             </div>
           </div>
+        </div>
+
+        {/* PART 3: STICKY BOTTOM SAVE ACTION BAR (ALWAYS VISIBLE) */}
+        <div className="shrink-0 p-3 bg-zinc-950 border-t border-zinc-800/90 shadow-2xl space-y-1">
+          {activeDisp ? (
+            <Button
+              onClick={handleBottomSaveClick}
+              disabled={saving}
+              className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-extrabold text-xs tracking-wide rounded-xl shadow-lg flex items-center justify-center space-x-2 active:scale-98 transition-transform"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-zinc-950" />
+              )}
+              <span className="truncate">
+                {saving
+                  ? `Saving ${activeDisp.label}...`
+                  : `Save Note & "${activeDisp.label}" (Next Lead →)`}
+              </span>
+            </Button>
+          ) : (
+            <Button
+              onClick={handleBottomSaveClick}
+              className="w-full h-12 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-2"
+            >
+              <span>👆 Tap an outcome above (e.g. Not interested) to Save</span>
+              <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+            </Button>
+          )}
+
+          {note.trim() && (
+            <div className="text-[10px] text-center text-zinc-400 font-mono truncate px-2">
+              Note attached: "{note.trim()}"
+            </div>
+          )}
         </div>
       </div>
     </div>
