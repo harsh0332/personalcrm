@@ -49,6 +49,9 @@ export interface ActiveLeadCallData {
   do_not_call: boolean;
   attempts: number;
   area_source: string | null;
+  next_action_at?: string | null;
+  last_called_at?: string | null;
+  campaign?: string | null;
 }
 
 interface LeadCallViewProps {
