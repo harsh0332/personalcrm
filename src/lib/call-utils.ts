@@ -84,18 +84,46 @@ export function getWhatsAppUrl(
 }
 
 /**
- * Calculates next_action_at timestamp based on follow_up_days or chosen date
+ * Calculates next_action_at timestamp based on follow_up_days or chosen date and time
  */
 export function calculateNextActionAt(
   followUpDays: number | null | undefined,
-  customDate?: Date | null
+  customDate?: Date | string | null,
+  customTime?: string | null
 ): string | null {
   if (customDate) {
-    return customDate.toISOString();
+    let dateObj: Date;
+    if (typeof customDate === "string") {
+      const parts = customDate.split("-");
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        dateObj = new Date(year, month, day);
+      } else {
+        dateObj = new Date(customDate);
+      }
+    } else {
+      dateObj = new Date(customDate);
+    }
+
+    if (customTime && customTime.includes(":")) {
+      const [h, m] = customTime.split(":").map((v) => parseInt(v, 10));
+      if (!isNaN(h) && !isNaN(m)) {
+        dateObj.setHours(h, m, 0, 0);
+      }
+    } else {
+      // Default to 11:00 AM if no time picked
+      dateObj.setHours(11, 0, 0, 0);
+    }
+
+    return dateObj.toISOString();
   }
+
   if (followUpDays !== null && followUpDays !== undefined && followUpDays > 0) {
     const target = new Date();
     target.setDate(target.getDate() + followUpDays);
+    target.setHours(11, 0, 0, 0);
     return target.toISOString();
   }
   return null;

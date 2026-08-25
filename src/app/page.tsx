@@ -565,12 +565,34 @@ export default function DashboardLandingPage() {
               </div>
 
               {/* PRIMARY ACTION BUTTON TO TODAY QUEUE */}
-              <Link href="/today" className="block pt-1">
+              <Link href="/today?tab=queue" className="block pt-1">
                 <Button className="w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-extrabold text-xs tracking-wide rounded-xl shadow-lg flex items-center justify-center space-x-2 transition-transform active:scale-[0.98]">
                   <span>START CALLING TODAY QUEUE</span>
                   <ArrowRight className="w-4 h-4 stroke-[3]" />
                 </Button>
               </Link>
+
+              {/* QUICK SHORTCUTS TO CALLBACKS & TODAY'S CALL LOG */}
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <Link href="/today?tab=callbacks">
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 border-zinc-800 bg-zinc-950/80 hover:bg-zinc-900 text-sky-300 hover:text-sky-200 text-xs font-semibold rounded-xl flex items-center justify-center space-x-1.5"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Callbacks Hub</span>
+                  </Button>
+                </Link>
+                <Link href="/today?tab=activity">
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 border-zinc-800 bg-zinc-950/80 hover:bg-zinc-900 text-purple-300 hover:text-purple-200 text-xs font-semibold rounded-xl flex items-center justify-center space-x-1.5"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Called Today Log</span>
+                  </Button>
+                </Link>
+              </div>
 
               {/* BACKUP STATUS / OVERDUE WARNING BANNER */}
               {lastBackupDaysAgo !== null && (

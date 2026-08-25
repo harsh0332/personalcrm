@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   FileText,
   Check,
+  Sun,
+  Sunset,
+  Sunrise,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { enqueueOfflineDisposition } from "@/lib/offline-queue";
@@ -54,6 +57,9 @@ export function DispositionSheet({
   const [note, setNote] = useState<string>("");
   const [selectedDispCode, setSelectedDispCode] = useState<string | null>(null);
   const [customDate, setCustomDate] = useState<string>("");
+  const [customTime, setCustomTime] = useState<string>("11:00");
+  const [selectedDatePreset, setSelectedDatePreset] = useState<string>("tomorrow");
+  const [selectedTimePreset, setSelectedTimePreset] = useState<string>("11:00");
   const [saving, setSaving] = useState<boolean>(false);
   const [savingLabel, setSavingLabel] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -69,6 +75,14 @@ export function DispositionSheet({
       setSaving(false);
       setSavingLabel("");
       setPromptSelectShake(false);
+
+      // Default to tomorrow 11:00 AM
+      const tmr = new Date();
+      tmr.setDate(tmr.getDate() + 1);
+      setCustomDate(tmr.toISOString().split("T")[0]);
+      setCustomTime("11:00");
+      setSelectedDatePreset("tomorrow");
+      setSelectedTimePreset("11:00");
     }
   }, [isOpen, initialDurationSec]);
 
@@ -128,11 +142,11 @@ export function DispositionSheet({
       const ownerId = user?.id;
       const nowIso = new Date().toISOString();
 
-      let targetFollowUpDate: Date | null = null;
+      let targetFollowUpDate: string | null = null;
       if (customDate) {
-        targetFollowUpDate = new Date(customDate);
+        targetFollowUpDate = customDate;
       }
-      const nextActionAt = calculateNextActionAt(disp.follow_up_days, targetFollowUpDate);
+      const nextActionAt = calculateNextActionAt(disp.follow_up_days, targetFollowUpDate, customTime);
 
       // Check 3 No-Answer Parked Guardrail
       let noAnswerCount = 0;
@@ -266,14 +280,17 @@ export function DispositionSheet({
       disp.follow_up_days === null &&
       (disp.code === "busy_callback" || disp.code === "meeting_fixed");
 
-    if (needsDatePicker && !customDate) {
-      const tmr = new Date();
-      tmr.setDate(tmr.getDate() + 1);
-      setCustomDate(tmr.toISOString().split("T")[0]);
+    if (needsDatePicker) {
+      // If callback or meeting fixed, keep date picker open for confirmation
+      if (!customDate) {
+        const tmr = new Date();
+        tmr.setDate(tmr.getDate() + 1);
+        setCustomDate(tmr.toISOString().split("T")[0]);
+      }
       return;
     }
 
-    // Direct save with current note and duration
+    // Direct save for standard outcomes (No answer, Interested, Converted, Lost, etc.)
     executeRecord(disp);
   };
 
@@ -290,15 +307,42 @@ export function DispositionSheet({
     }
   };
 
-  const handleQuickDateSelect = (daysFromNow: number) => {
+  const handleQuickDatePreset = (presetKey: string, daysFromNow: number) => {
+    setSelectedDatePreset(presetKey);
     const d = new Date();
     d.setDate(d.getDate() + daysFromNow);
     setCustomDate(d.toISOString().split("T")[0]);
   };
 
+  const handleQuickTimePreset = (timeStr: string) => {
+    setSelectedTimePreset(timeStr);
+    setCustomTime(timeStr);
+  };
+
+  const getFriendlyScheduleText = () => {
+    let dateLabel = "Tomorrow";
+    if (selectedDatePreset === "today") dateLabel = "Today";
+    else if (selectedDatePreset === "tomorrow") dateLabel = "Tomorrow";
+    else if (selectedDatePreset === "day_after") dateLabel = "Day After Tomorrow";
+    else if (selectedDatePreset === "in_3_days") dateLabel = "In 3 Days";
+    else if (selectedDatePreset === "next_week") dateLabel = "Next Week";
+    else if (customDate) dateLabel = customDate;
+
+    let timeLabel = customTime;
+    if (customTime === "10:00") timeLabel = "10:00 AM (Morning)";
+    else if (customTime === "12:00") timeLabel = "12:00 PM (Noon)";
+    else if (customTime === "15:00") timeLabel = "03:00 PM (Afternoon)";
+    else if (customTime === "18:00") timeLabel = "06:00 PM (Evening)";
+
+    return `${dateLabel} at ${timeLabel}`;
+  };
+
   if (!isOpen) return null;
 
   const activeDisp = dispositions.find((d) => d.code === selectedDispCode);
+  const isCallbackOrMeeting =
+    activeDisp &&
+    (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed");
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -412,66 +456,199 @@ export function DispositionSheet({
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. They don't want website, budget issue, call back next month..."
+              placeholder="e.g. Asked to call back at 3 PM, interested in SEO..."
               className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-zinc-100 placeholder:text-zinc-600 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none leading-relaxed"
             />
             <div className="p-2 bg-zinc-950/80 rounded-lg border border-zinc-800/80 text-[11px] text-zinc-400 leading-snug">
-              👇 <strong className="text-emerald-400">Next Step:</strong> Niche diye gaye 10 outcomes me se ek select karein (jaise <span className="text-zinc-200 font-semibold">Not interested</span>, <span className="text-zinc-200 font-semibold">Interested</span>, ya <span className="text-zinc-200 font-semibold">No answer</span>).
+              👇 <strong className="text-emerald-400">Next Step:</strong> Niche diye gaye 10 outcomes me se ek outcome select karein.
             </div>
           </div>
 
-          {/* Date Picker if busy_callback or meeting_fixed */}
-          {activeDisp &&
-            activeDisp.follow_up_days === null &&
-            (activeDisp.code === "busy_callback" || activeDisp.code === "meeting_fixed") && (
-              <div className="p-3 bg-emerald-950/40 border-2 border-emerald-600 rounded-2xl space-y-2 text-xs animate-in fade-in">
-                <span className="flex items-center gap-1.5 text-xs text-emerald-300 font-bold">
-                  <Calendar className="w-4 h-4 text-emerald-400" /> Select Follow-up Date for {activeDisp.label}:
+          {/* SMART CALLBACK DATE & TIME PICKER (When Call back later or Meeting fixed is selected) */}
+          {isCallbackOrMeeting && (
+            <div className="p-3.5 bg-sky-950/40 border-2 border-sky-600 rounded-2xl space-y-3 text-xs animate-in fade-in shadow-xl">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs text-sky-300 font-bold">
+                  <Calendar className="w-4 h-4 text-sky-400" /> Schedule Callback Date & Time:
                 </span>
-                <div className="flex gap-1.5">
+                <span className="text-[10px] bg-sky-950 text-sky-300 px-2 py-0.5 rounded-full border border-sky-700 font-mono">
+                  {activeDisp.label}
+                </span>
+              </div>
+
+              {/* 1. DATE PRESETS (Today, Tomorrow, Day After, In 3 Days, Next Week) */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-zinc-300 font-semibold block">
+                  Select Date:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => handleQuickDateSelect(1)}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                    onClick={() => handleQuickDatePreset("today", 0)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      selectedDatePreset === "today"
+                        ? "bg-sky-600 text-zinc-950 ring-2 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDatePreset("tomorrow", 1)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      selectedDatePreset === "tomorrow"
+                        ? "bg-sky-600 text-zinc-950 ring-2 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                    }`}
                   >
                     Tomorrow
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleQuickDateSelect(3)}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                    onClick={() => handleQuickDatePreset("day_after", 2)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      selectedDatePreset === "day_after"
+                        ? "bg-sky-600 text-zinc-950 ring-2 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                    }`}
+                  >
+                    Day After (+2d)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDatePreset("in_3_days", 3)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      selectedDatePreset === "in_3_days"
+                        ? "bg-sky-600 text-zinc-950 ring-2 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                    }`}
                   >
                     In 3 Days
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleQuickDateSelect(7)}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium"
+                    onClick={() => handleQuickDatePreset("next_week", 7)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      selectedDatePreset === "next_week"
+                        ? "bg-sky-600 text-zinc-950 ring-2 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                    }`}
                   >
-                    Next Week
+                    Next Week (+7d)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDatePreset("custom")}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      selectedDatePreset === "custom"
+                        ? "bg-sky-600 text-zinc-950 ring-2 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                    }`}
+                  >
+                    Custom Date
                   </button>
                 </div>
-                <input
-                  type="date"
-                  value={customDate}
-                  onChange={(e) => setCustomDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-zinc-100 focus:outline-none"
-                />
+
+                {selectedDatePreset === "custom" && (
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => {
+                      setCustomDate(e.target.value);
+                      setSelectedDatePreset("custom");
+                    }}
+                    className="w-full px-3 py-1.5 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500 mt-1"
+                  />
+                )}
               </div>
-            )}
+
+              {/* 2. TIME PRESETS (10:00 AM, 12:00 PM, 03:00 PM, 06:00 PM) */}
+              <div className="space-y-1.5 pt-1 border-t border-zinc-800">
+                <label className="text-[11px] text-zinc-300 font-semibold block">
+                  Select Time:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickTimePreset("10:00")}
+                    className={`py-1 px-2 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1 transition-all ${
+                      customTime === "10:00"
+                        ? "bg-sky-500 text-zinc-950 font-bold ring-1 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    }`}
+                  >
+                    <Sunrise className="w-3 h-3" /> 10:00 AM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickTimePreset("12:00")}
+                    className={`py-1 px-2 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1 transition-all ${
+                      customTime === "12:00"
+                        ? "bg-sky-500 text-zinc-950 font-bold ring-1 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    }`}
+                  >
+                    <Sun className="w-3 h-3" /> 12:00 PM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickTimePreset("15:00")}
+                    className={`py-1 px-2 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1 transition-all ${
+                      customTime === "15:00"
+                        ? "bg-sky-500 text-zinc-950 font-bold ring-1 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    }`}
+                  >
+                    <Sun className="w-3 h-3" /> 03:00 PM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickTimePreset("18:00")}
+                    className={`py-1 px-2 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1 transition-all ${
+                      customTime === "18:00"
+                        ? "bg-sky-500 text-zinc-950 font-bold ring-1 ring-sky-300"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    }`}
+                  >
+                    <Sunset className="w-3 h-3" /> 06:00 PM
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-[11px] text-zinc-400">Custom Time:</span>
+                  <input
+                    type="time"
+                    value={customTime}
+                    onChange={(e) => {
+                      setCustomTime(e.target.value);
+                      setSelectedTimePreset(e.target.value);
+                    }}
+                    className="px-2 py-1 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* SCHEDULE SUMMARY PREVIEW */}
+              <div className="p-2 bg-sky-950/80 rounded-xl border border-sky-700/80 flex items-center justify-between text-xs">
+                <span className="text-sky-300 font-medium">Scheduled for:</span>
+                <span className="font-bold text-white font-mono">{getFriendlyScheduleText()}</span>
+              </div>
+            </div>
+          )}
 
           {/* DISPOSITION BUTTONS SECTION */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-emerald-400 block">
-                Select Call Outcome (Tap to Save)
+                Select Call Outcome (Tap to Select)
               </label>
-              <span className="text-[10px] text-zinc-500 font-mono">1-tap saves note & outcome</span>
+              <span className="text-[10px] text-zinc-500 font-mono">10 standard outcomes</span>
             </div>
 
             {promptSelectShake && !selectedDispCode && (
               <div className="p-2.5 bg-amber-950 border border-amber-600 rounded-xl text-amber-200 text-xs font-bold flex items-center gap-2 animate-bounce">
-                <span>⚠️ Pehle niche kisi ek outcome par tap karein (e.g. Not interested)!</span>
+                <span>⚠️ Pehle niche kisi ek outcome par tap karein (e.g. Call back later ya Not interested)!</span>
               </div>
             )}
 
@@ -526,7 +703,11 @@ export function DispositionSheet({
             <Button
               onClick={handleBottomSaveClick}
               disabled={saving}
-              className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-extrabold text-xs tracking-wide rounded-xl shadow-lg flex items-center justify-center space-x-2 active:scale-98 transition-transform"
+              className={`w-full h-12 text-zinc-950 font-extrabold text-xs tracking-wide rounded-xl shadow-lg flex items-center justify-center space-x-2 active:scale-98 transition-transform ${
+                isCallbackOrMeeting
+                  ? "bg-sky-500 hover:bg-sky-400 text-zinc-950"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-zinc-950"
+              }`}
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
@@ -536,6 +717,8 @@ export function DispositionSheet({
               <span className="truncate">
                 {saving
                   ? `Saving ${activeDisp.label}...`
+                  : isCallbackOrMeeting
+                  ? `Save & Schedule Callback (${getFriendlyScheduleText()}) →`
                   : `Save Note & "${activeDisp.label}" (Next Lead →)`}
               </span>
             </Button>
@@ -544,7 +727,7 @@ export function DispositionSheet({
               onClick={handleBottomSaveClick}
               className="w-full h-12 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-2"
             >
-              <span>👆 Tap an outcome above (e.g. Not interested) to Save</span>
+              <span>👆 Tap an outcome above (e.g. Call back later) to Save</span>
               <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
             </Button>
           )}
