@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LeadCallView, ActiveLeadCallData } from "@/components/lead-call-view";
@@ -53,7 +53,7 @@ interface ActivityLogItem {
 
 type TodayTab = "queue" | "callbacks" | "activity";
 
-export default function TodayQueuePage() {
+function TodayQueuePageContent() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as TodayTab) || "queue";
   const [activeTab, setActiveTab] = useState<TodayTab>(initialTab);
@@ -1146,5 +1146,22 @@ function CallbackCard({
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TodayQueuePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex-1 flex flex-col min-h-screen bg-zinc-950 p-4 space-y-4 max-w-md mx-auto w-full">
+          <Skeleton className="h-12 w-full bg-zinc-900 rounded-xl" />
+          <Skeleton className="h-10 w-full bg-zinc-900 rounded-xl" />
+          <Skeleton className="h-32 w-full bg-zinc-900 rounded-2xl" />
+          <Skeleton className="h-32 w-full bg-zinc-900 rounded-2xl" />
+        </div>
+      }
+    >
+      <TodayQueuePageContent />
+    </Suspense>
   );
 }
