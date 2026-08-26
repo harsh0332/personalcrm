@@ -16,6 +16,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +45,11 @@ export default function AccountPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [signingOut, setSigningOut] = useState<boolean>(false);
+
+  // Danger Zone Reset State
+  const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [resetting, setResetting] = useState<boolean>(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
 
   // Export State
   const [campaigns, setCampaigns] = useState<string[]>([]);
@@ -350,6 +357,31 @@ export default function AccountPage() {
     }
   };
 
+  // 3. RESET / WIPE ALL CRM DATA (DANGER ZONE)
+  const handleResetCrmData = async () => {
+    setResetting(true);
+    setResetMsg(null);
+
+    try {
+      // 1. Delete followups
+      await supabase.from("followups").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      // 2. Delete activities
+      await supabase.from("activities").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      // 3. Delete imports
+      await supabase.from("imports").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      // 4. Delete leads
+      await supabase.from("leads").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+
+      setResetMsg("✓ All leads, call logs, callbacks, and import records deleted. Database is now 100% clean and ready for a fresh upload!");
+      setShowResetConfirm(false);
+      calculateOutcomesCount();
+    } catch (err: any) {
+      setResetMsg(`Reset error: ${err.message}`);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
@@ -522,6 +554,68 @@ export default function AccountPage() {
                 <span>EXPORT EVERYTHING (Full CSV Backup)</span>
               </Button>
             </div>
+          </div>
+
+          {/* DANGER ZONE: CLEAR ALL CRM DATA */}
+          <div className="bg-zinc-900 border border-rose-900/60 rounded-2xl p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between border-b border-rose-950 pb-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                <Trash2 className="w-4 h-4" /> Danger Zone: Clear CRM Data
+              </h2>
+              <span className="text-[10px] text-rose-400/80 font-mono">Permanent Reset</span>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Use this when you want to wipe all old leads, call logs, and callbacks before uploading a brand new fresh CSV file.
+            </p>
+
+            {resetMsg && (
+              <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl text-xs flex items-start space-x-2 text-zinc-200">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{resetMsg}</span>
+              </div>
+            )}
+
+            {showResetConfirm ? (
+              <div className="p-3 bg-rose-950/80 border-2 border-rose-700 rounded-xl space-y-2.5 animate-in fade-in">
+                <div className="flex items-start gap-2 text-xs text-rose-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span className="font-semibold">
+                    Are you 100% sure? This will delete all leads, activities, callbacks, and import history!
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleResetCrmData}
+                    disabled={resetting}
+                    className="flex-1 h-9 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg"
+                  >
+                    {resetting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    Yes, Delete Everything
+                  </Button>
+                  <Button
+                    onClick={() => setShowResetConfirm(false)}
+                    variant="outline"
+                    className="h-9 px-3 border-zinc-700 bg-zinc-900 text-zinc-300 text-xs rounded-lg font-medium"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                onClick={() => setShowResetConfirm(true)}
+                variant="outline"
+                className="w-full h-10 border-rose-900/80 bg-rose-950/30 hover:bg-rose-950/80 text-rose-300 hover:text-rose-100 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-colors"
+              >
+                <Trash2 className="w-4 h-4 text-rose-400" />
+                <span>WIPE ALL CRM DATA & RESET DATABASE</span>
+              </Button>
+            )}
           </div>
 
           {/* APPLICATION INFO */}

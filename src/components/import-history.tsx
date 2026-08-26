@@ -226,16 +226,8 @@ export function ImportHistory() {
         activityLeadIdsSet = new Set((activitiesData || []).map((a) => a.lead_id));
       }
 
-      const deletableLeadIds: string[] = [];
+      const deletableLeadIds = (leadsData || []).map((l) => l.id);
       const keptLeadIds: string[] = [];
-
-      (leadsData || []).forEach((lead) => {
-        if (lead.attempts > 0 || activityLeadIdsSet.has(lead.id)) {
-          keptLeadIds.push(lead.id);
-        } else {
-          deletableLeadIds.push(lead.id);
-        }
-      });
 
       setDeleteTarget({
         row,
