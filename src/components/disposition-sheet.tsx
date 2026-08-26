@@ -236,10 +236,9 @@ export function DispositionSheet({
       }
       if (disp.sets_dnc) {
         leadUpdatePayload.do_not_call = true;
+        leadUpdatePayload.status = "lost";
       }
-      if (nextActionAt) {
-        leadUpdatePayload.next_action_at = nextActionAt;
-      }
+      leadUpdatePayload.next_action_at = nextActionAt || null;
 
       const { error: leadErr } = await supabase
         .from("leads")

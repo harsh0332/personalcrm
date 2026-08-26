@@ -59,6 +59,7 @@ interface LeadCallViewProps {
   onNextLead?: () => void;
   onPrevLead?: () => void;
   onClose: () => void;
+  onDispositionSaved?: (leadId: string) => void;
   totalInQueue?: number;
   currentIndex?: number;
 }
@@ -68,6 +69,7 @@ export function LeadCallView({
   onNextLead,
   onPrevLead,
   onClose,
+  onDispositionSaved,
   totalInQueue = 1,
   currentIndex = 1,
 }: LeadCallViewProps) {
@@ -156,8 +158,10 @@ export function LeadCallView({
       setUndoNotice(null);
     }, 5000);
 
-    // Advance directly to next lead in current queue
-    if (onNextLead) {
+    // Advance directly or notify parent queue to pop completed lead
+    if (onDispositionSaved) {
+      onDispositionSaved(lead.id);
+    } else if (onNextLead) {
       onNextLead();
     }
   };

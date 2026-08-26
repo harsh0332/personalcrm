@@ -26,6 +26,11 @@ import {
   ListTodo,
   FileText,
   ArrowUpRight,
+  Search,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  Layers,
 } from "lucide-react";
 import Link from "next/link";
 import { getGmbUrl } from "@/lib/gmb-utils";
@@ -52,6 +57,7 @@ interface ActivityLogItem {
 }
 
 type TodayTab = "queue" | "callbacks" | "activity";
+type HistoryDateFilter = "today" | "yesterday" | "week" | "all";
 
 function TodayQueuePageContent() {
   const searchParams = useSearchParams();
@@ -64,6 +70,11 @@ function TodayQueuePageContent() {
   // Campaign Filter State
   const [campaigns, setCampaigns] = useState<string[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<string>("all");
+
+  // Fresh Leads Batch Size (Default 100)
+  const [freshLeadLimit, setFreshLeadLimit] = useState<number>(100);
+  const [totalFreshCount, setTotalFreshCount] = useState<number>(0);
+  const [loadingMoreFresh, setLoadingMoreFresh] = useState<boolean>(false);
 
   // Header 3 Numbers
   const [dueTodayCount, setDueTodayCount] = useState<number>(0);
@@ -78,10 +89,12 @@ function TodayQueuePageContent() {
   const [tomorrowItems, setTomorrowItems] = useState<FollowupQueueItem[]>([]);
   const [allCallbacks, setAllCallbacks] = useState<FollowupQueueItem[]>([]);
 
-  // Activity Log
-  const [todayActivities, setTodayActivities] = useState<ActivityLogItem[]>([]);
+  // Call History State
+  const [historyFilter, setHistoryFilter] = useState<HistoryDateFilter>("today");
+  const [historySearchQuery, setHistorySearchQuery] = useState<string>("");
+  const [activitiesList, setActivitiesList] = useState<ActivityLogItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
-  const [comingUpExpanded, setComingUpExpanded] = useState<boolean>(false);
   const [excludedCount, setExcludedCount] = useState<number>(0);
 
   // Active Calling
@@ -117,6 +130,7 @@ function TodayQueuePageContent() {
     loadCampaigns();
   }, [supabase]);
 
+  // 1. Fetch Today Queue & Callbacks
   const fetchTodayData = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
@@ -127,49 +141,17 @@ function TodayQueuePageContent() {
       const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
       const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
       const endOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2).toISOString();
-      const in7Days = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 8).toISOString();
 
-      // 1. Fetch Today's Activities
-      const { data: rawActivities, error: actErr } = await supabase
+      // a. Called Today Count
+      const { count: calledCount } = await supabase
         .from("activities")
-        .select(`
-          id,
-          lead_id,
-          disposition,
-          duration_sec,
-          note,
-          occurred_at,
-          lead:leads (
-            id, cid, name, phone, phone_e164, area, category, tier,
-            rating, review_count, demand_score, status, do_not_call,
-            attempts, area_source, campaign, next_action_at
-          )
-        `)
+        .select("id", { count: "exact", head: true })
         .eq("kind", "call")
-        .gte("occurred_at", startOfToday)
-        .order("occurred_at", { ascending: false });
+        .gte("occurred_at", startOfToday);
 
-      if (!actErr && rawActivities) {
-        const filteredActivities = (rawActivities || [])
-          .filter((a: any) => {
-            if (selectedCampaign === "all") return true;
-            return a.lead?.campaign === selectedCampaign;
-          })
-          .map((a: any) => ({
-            id: a.id,
-            lead_id: a.lead_id,
-            disposition: a.disposition,
-            duration_sec: a.duration_sec || 0,
-            note: a.note,
-            occurred_at: a.occurred_at,
-            lead: a.lead as unknown as ActiveLeadCallData,
-          }));
+      setCalledTodayCount(calledCount || 0);
 
-        setTodayActivities(filteredActivities);
-        setCalledTodayCount(filteredActivities.length);
-      }
-
-      // 2. Fetch Pending Follow-ups (done_at IS NULL)
+      // b. Fetch Pending Follow-ups (done_at IS NULL)
       const { data: rawFollowups, error: fllwErr } = await supabase
         .from("followups")
         .select(`
@@ -205,7 +187,7 @@ function TodayQueuePageContent() {
           return;
         }
 
-        // Skip excluded leads (DNC, lost, invalid, won, parked)
+        // STRICT EXCLUSION: Skip dead leads (DNC, lost, invalid, won, parked)
         if (
           lead.do_not_call ||
           ["lost", "invalid", "won", "parked"].includes(lead.status)
@@ -248,35 +230,36 @@ function TodayQueuePageContent() {
       setOverdueCount(overdueList.length);
       setDueTodayCount(todayList.length);
 
-      // 3. Fetch New Leads (attempts = 0 or status = 'new')
+      // c. Fetch Fresh Uncalled Leads (up to freshLeadLimit, e.g. 100 leads)
       let newLeadsQuery = supabase
         .from("leads")
         .select(`
           id, cid, name, phone, phone_e164, area, category, tier,
           rating, review_count, demand_score, status, do_not_call,
           attempts, area_source, campaign, next_action_at
-        `)
+        `, { count: "exact" })
         .eq("do_not_call", false)
-        .eq("status", "new")
-        .eq("attempts", 0);
+        .not("status", "in", '("lost","invalid","won","parked","interested","meeting_fixed","quote_sent")')
+        .or("status.eq.new,attempts.eq.0,attempts.is.null");
 
       if (selectedCampaign !== "all") {
         newLeadsQuery = newLeadsQuery.eq("campaign", selectedCampaign);
       }
 
-      const { data: rawNewLeads, error: newErr } = await newLeadsQuery
+      const { data: rawNewLeads, count: newCount, error: newErr } = await newLeadsQuery
         .order("tier", { ascending: true, nullsFirst: false })
         .order("demand_score", { ascending: false, nullsFirst: false })
         .order("review_count", { ascending: false, nullsFirst: false })
-        .limit(25);
+        .limit(freshLeadLimit);
 
       if (!newErr && rawNewLeads) {
         setNewLeadItems(
           rawNewLeads.map((l: any) => ({ lead: l as unknown as ActiveLeadCallData }))
         );
+        setTotalFreshCount(newCount || 0);
       }
 
-      // 4. Fetch Excluded Leads Count
+      // d. Fetch Excluded Leads Count
       let exQuery = supabase
         .from("leads")
         .select("id", { count: "exact", head: true })
@@ -293,11 +276,80 @@ function TodayQueuePageContent() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, selectedCampaign]);
+  }, [supabase, selectedCampaign, freshLeadLimit]);
+
+  // 2. Fetch Call History Activities based on Date Filter
+  const fetchActivitiesHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).toISOString();
+      const startOf7DaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString();
+
+      let query = supabase
+        .from("activities")
+        .select(`
+          id,
+          lead_id,
+          disposition,
+          duration_sec,
+          note,
+          occurred_at,
+          lead:leads (
+            id, cid, name, phone, phone_e164, area, category, tier,
+            rating, review_count, demand_score, status, do_not_call,
+            attempts, area_source, campaign, next_action_at
+          )
+        `)
+        .eq("kind", "call");
+
+      if (historyFilter === "today") {
+        query = query.gte("occurred_at", startOfToday);
+      } else if (historyFilter === "yesterday") {
+        query = query.gte("occurred_at", startOfYesterday).lt("occurred_at", startOfToday);
+      } else if (historyFilter === "week") {
+        query = query.gte("occurred_at", startOf7DaysAgo);
+      }
+
+      const { data: rawActivities, error } = await query
+        .order("occurred_at", { ascending: false })
+        .limit(200);
+
+      if (!error && rawActivities) {
+        const filtered = (rawActivities || [])
+          .filter((a: any) => {
+            if (selectedCampaign === "all") return true;
+            return a.lead?.campaign === selectedCampaign;
+          })
+          .map((a: any) => ({
+            id: a.id,
+            lead_id: a.lead_id,
+            disposition: a.disposition,
+            duration_sec: a.duration_sec || 0,
+            note: a.note,
+            occurred_at: a.occurred_at,
+            lead: a.lead as unknown as ActiveLeadCallData,
+          }));
+
+        setActivitiesList(filtered);
+      }
+    } catch {
+      // Handled quietly
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [supabase, historyFilter, selectedCampaign]);
 
   useEffect(() => {
     fetchTodayData();
   }, [fetchTodayData]);
+
+  useEffect(() => {
+    if (activeTab === "activity") {
+      fetchActivitiesHistory();
+    }
+  }, [activeTab, fetchActivitiesHistory]);
 
   // Combine queue leads for active calling sequence
   const combinedCallSequence = useMemo(() => {
@@ -315,6 +367,29 @@ function TodayQueuePageContent() {
     setActiveLeadIndex(idx >= 0 ? idx : 0);
     setActiveLead(targetLead);
   };
+
+  // When a disposition is saved in LeadCallView:
+  // Dynamically remove that completed lead from activeQueueList so the next lead smoothly slides up!
+  const handleLeadDispositionRecorded = useCallback(() => {
+    if (activeLead) {
+      const currentLeadId = activeLead.id;
+      setActiveQueueList((prevList) => {
+        const updated = prevList.filter((l) => l.id !== currentLeadId);
+        if (updated.length > 0) {
+          const nextIndex = Math.min(activeLeadIndex, updated.length - 1);
+          setActiveLeadIndex(nextIndex);
+          setActiveLead(updated[nextIndex]);
+        } else {
+          setActiveLead(null);
+        }
+        return updated;
+      });
+    }
+    fetchTodayData();
+    if (activeTab === "activity") {
+      fetchActivitiesHistory();
+    }
+  }, [activeLead, activeLeadIndex, fetchTodayData, fetchActivitiesHistory, activeTab]);
 
   // Snooze Action
   const handleSnooze = async (followupId: string, leadId: string, daysToSnooze: number) => {
@@ -358,6 +433,11 @@ function TodayQueuePageContent() {
     }
   };
 
+  const handleLoadMoreFreshLeads = () => {
+    setLoadingMoreFresh(true);
+    setFreshLeadLimit((prev) => prev + 50);
+  };
+
   const formatScheduledTime = (isoString: string) => {
     if (!isoString) return "";
     try {
@@ -384,6 +464,27 @@ function TodayQueuePageContent() {
     }
   };
 
+  const formatActivityTimestamp = (isoString: string) => {
+    try {
+      const d = new Date(isoString);
+      const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const diffDays = Math.round((today.getTime() - targetDay.getTime()) / (1000 * 3600 * 24));
+
+      if (diffDays === 0) {
+        return `Today, ${timeStr}`;
+      } else if (diffDays === 1) {
+        return `Yesterday, ${timeStr}`;
+      } else {
+        return `${d.toLocaleDateString([], { day: "numeric", month: "short" })}, ${timeStr}`;
+      }
+    } catch {
+      return isoString.slice(0, 16);
+    }
+  };
+
   const getDispositionBadgeStyle = (code: string) => {
     switch (code) {
       case "interested":
@@ -404,6 +505,19 @@ function TodayQueuePageContent() {
     }
   };
 
+  // Filtered History List via search box
+  const filteredActivities = useMemo(() => {
+    if (!historySearchQuery.trim()) return activitiesList;
+    const q = historySearchQuery.toLowerCase().trim();
+    return activitiesList.filter((a) => {
+      const nameMatch = a.lead?.name?.toLowerCase().includes(q);
+      const noteMatch = a.note?.toLowerCase().includes(q);
+      const phoneMatch = a.lead?.phone?.includes(q);
+      const dispMatch = a.disposition?.toLowerCase().includes(q);
+      return nameMatch || noteMatch || phoneMatch || dispMatch;
+    });
+  }, [activitiesList, historySearchQuery]);
+
   return (
     <main className="flex-1 flex flex-col min-h-screen bg-zinc-950 pb-20 text-zinc-100 font-sans">
       {/* 1. STICKY TOP HEADER & 3-SEGMENT TABS */}
@@ -416,20 +530,18 @@ function TodayQueuePageContent() {
 
           <div className="flex items-center gap-3 text-xs font-mono">
             <div className="flex items-center gap-1">
-              <span className="text-zinc-500">Due:</span>
-              <span className="font-bold text-emerald-400">{dueTodayCount}</span>
+              <span className="text-zinc-500">Queue:</span>
+              <span className="font-bold text-emerald-400">{combinedCallSequence.length}</span>
             </div>
             <span className="text-zinc-700">•</span>
             <div className="flex items-center gap-1">
-              <span className="text-zinc-500">Late:</span>
-              <span className={`font-bold ${overdueCount > 0 ? "text-rose-400" : "text-zinc-400"}`}>
-                {overdueCount}
-              </span>
+              <span className="text-zinc-500">Callbacks:</span>
+              <span className="font-bold text-sky-400">{allCallbacks.length}</span>
             </div>
             <span className="text-zinc-700">•</span>
             <div className="flex items-center gap-1">
               <span className="text-zinc-500">Calls:</span>
-              <span className="font-bold text-sky-400">{calledTodayCount}</span>
+              <span className="font-bold text-purple-400">{calledTodayCount}</span>
             </div>
           </div>
         </div>
@@ -469,7 +581,7 @@ function TodayQueuePageContent() {
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>Called Today ({todayActivities.length})</span>
+            <span>History ({calledTodayCount})</span>
           </button>
         </div>
 
@@ -523,7 +635,7 @@ function TodayQueuePageContent() {
           </div>
         ) : activeTab === "queue" ? (
           /* ====================================================================== */
-          /* TAB 1: CALLING QUEUE                                                   */
+          /* TAB 1: CALLING QUEUE (100 LEADS BATCH + SLIDING CONTINUOUS STREAM)     */
           /* ====================================================================== */
           combinedCallSequence.length === 0 ? (
             <div className="py-16 text-center space-y-4">
@@ -533,7 +645,7 @@ function TodayQueuePageContent() {
               <div className="space-y-1.5">
                 <h2 className="text-base font-bold text-zinc-100">All caught up for today!</h2>
                 <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
-                  No pending follow-ups or fresh leads remaining in your call queue.
+                  No pending follow-ups or uncalled leads in your queue.
                 </p>
               </div>
               <div className="flex gap-2 justify-center">
@@ -553,12 +665,31 @@ function TodayQueuePageContent() {
             </div>
           ) : (
             <div className="space-y-6">
+              {/* 1-TAP START SESSION HEADER BANNER */}
+              <div className="bg-emerald-950/40 border border-emerald-800/80 p-3.5 rounded-2xl flex items-center justify-between shadow-sm">
+                <div>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase tracking-wider block">
+                    READY FOR CALLING SESSION
+                  </span>
+                  <div className="text-xs text-zinc-200 font-semibold mt-0.5">
+                    {combinedCallSequence.length} Leads loaded in queue
+                  </div>
+                </div>
+                <Button
+                  onClick={() => handleStartCall(combinedCallSequence[0])}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs h-9 px-4 rounded-xl shadow-md flex items-center gap-1.5 active:scale-95"
+                >
+                  <Phone className="w-3.5 h-3.5 fill-zinc-950" />
+                  <span>START CALLING</span>
+                </Button>
+              </div>
+
               {/* OVERDUE */}
               {overdueItems.length > 0 && (
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5" /> Overdue ({overdueItems.length})
+                      <Clock className="w-3.5 h-3.5" /> Overdue Follow-ups ({overdueItems.length})
                     </h2>
                     <span className="text-[10px] text-zinc-500">Oldest first</span>
                   </div>
@@ -607,14 +738,14 @@ function TodayQueuePageContent() {
                 </div>
               )}
 
-              {/* NEW LEADS */}
+              {/* FRESH UNCALLED LEADS (100+ BATCH) */}
               {newLeadItems.length > 0 && (
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" /> Fresh Uncalled Leads ({newLeadItems.length})
+                      <Sparkles className="w-3.5 h-3.5" /> Fresh Uncalled Leads ({newLeadItems.length} loaded{totalFreshCount > newLeadItems.length ? ` of ${totalFreshCount}` : ""})
                     </h2>
-                    <span className="text-[10px] text-zinc-500">Best-first order</span>
+                    <span className="text-[10px] text-zinc-500">Best-first (Tier A→B→C)</span>
                   </div>
 
                   <div className="space-y-2">
@@ -629,14 +760,29 @@ function TodayQueuePageContent() {
                       />
                     ))}
                   </div>
+
+                  {/* LOAD MORE FRESH LEADS TRIGGER */}
+                  {totalFreshCount > newLeadItems.length && (
+                    <div className="pt-2">
+                      <Button
+                        onClick={handleLoadMoreFreshLeads}
+                        disabled={loadingMoreFresh}
+                        variant="outline"
+                        className="w-full h-11 border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-sky-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2"
+                      >
+                        <Layers className="w-4 h-4 text-sky-400" />
+                        <span>Load +50 More Fresh Leads ({totalFreshCount - newLeadItems.length} remaining in DB)</span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* EXCLUDED COUNT */}
+              {/* EXCLUDED COUNT FOOTER */}
               {excludedCount > 0 && (
                 <div className="pt-2 text-center">
                   <p className="text-[11px] text-zinc-500 font-mono">
-                    {excludedCount} leads excluded (lost, won, parked, do-not-call)
+                    {excludedCount} dead leads automatically excluded (Not interested, DNC, lost, parked)
                   </p>
                 </div>
               )}
@@ -757,141 +903,195 @@ function TodayQueuePageContent() {
           )
         ) : (
           /* ====================================================================== */
-          /* TAB 3: TODAY'S CALL ACTIVITY LOG                                       */
+          /* TAB 3: COMPLETE MULTI-DAY CALL HISTORY & SEARCH LOG                    */
           /* ====================================================================== */
-          todayActivities.length === 0 ? (
-            <div className="py-16 text-center space-y-4">
-              <div className="p-4 bg-purple-950/60 border border-purple-800/80 rounded-full w-14 h-14 mx-auto flex items-center justify-center text-purple-400">
-                <PhoneCall className="w-8 h-8" />
+          <div className="space-y-4">
+            {/* DATE SEGMENT FILTERS & SEARCH */}
+            <div className="space-y-2.5 bg-zinc-900 border border-zinc-800 p-3.5 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5" /> Call History Records
+                </span>
+                <span className="text-[11px] font-mono font-bold text-white bg-purple-950 px-2 py-0.5 rounded border border-purple-800">
+                  {filteredActivities.length} Calls
+                </span>
               </div>
-              <div className="space-y-1.5">
-                <h2 className="text-base font-bold text-zinc-100">No calls logged yet today</h2>
-                <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
-                  Start calling from your queue — every call you log will appear here with duration, outcome, and notes.
-                </p>
+
+              {/* Date Filter Tabs */}
+              <div className="grid grid-cols-4 gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[11px] font-semibold">
+                <button
+                  onClick={() => setHistoryFilter("today")}
+                  className={`py-1 px-1 rounded-lg transition-all ${
+                    historyFilter === "today"
+                      ? "bg-purple-600 text-white font-bold"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => setHistoryFilter("yesterday")}
+                  className={`py-1 px-1 rounded-lg transition-all ${
+                    historyFilter === "yesterday"
+                      ? "bg-purple-600 text-white font-bold"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Yesterday
+                </button>
+                <button
+                  onClick={() => setHistoryFilter("week")}
+                  className={`py-1 px-1 rounded-lg transition-all ${
+                    historyFilter === "week"
+                      ? "bg-purple-600 text-white font-bold"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Past 7d
+                </button>
+                <button
+                  onClick={() => setHistoryFilter("all")}
+                  className={`py-1 px-1 rounded-lg transition-all ${
+                    historyFilter === "all"
+                      ? "bg-purple-600 text-white font-bold"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  All History
+                </button>
               </div>
-              <Button
-                onClick={() => setActiveTab("queue")}
-                className="bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold text-xs"
-              >
-                Start Calling Now →
-              </Button>
+
+              {/* Search Box */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  placeholder="Search by Business Name or Note..."
+                  className="w-full pl-8 pr-8 py-1.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                />
+                {historySearchQuery && (
+                  <button
+                    onClick={() => setHistorySearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {/* SUMMARY STATS BANNER */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-                    <History className="w-3.5 h-3.5" /> Today's Calling Record
-                  </h3>
-                  <span className="text-xs font-mono font-bold text-white bg-purple-950 px-2 py-0.5 rounded border border-purple-800">
-                    {todayActivities.length} Calls Made
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400">
-                  Yeh aapki aaj ki complete call history hai jisme har business ka feedback, duration aur note record hai.
-                </p>
+
+            {/* CALL HISTORY LIST */}
+            {loadingHistory ? (
+              <div className="space-y-2 pt-2">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full bg-zinc-900 rounded-xl" />
+                ))}
               </div>
-
-              {/* ACTIVITY LOG TIMELINE CARDS */}
+            ) : filteredActivities.length === 0 ? (
+              <div className="py-12 text-center space-y-3 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6">
+                <History className="w-8 h-8 text-zinc-600 mx-auto" />
+                <div className="space-y-1">
+                  <h3 className="text-xs font-semibold text-zinc-300">
+                    No calls recorded for {historyFilter === "today" ? "today" : historyFilter === "yesterday" ? "yesterday" : historyFilter === "week" ? "this past week" : "this filter"}
+                  </h3>
+                  <p className="text-[11px] text-zinc-500">
+                    {historySearchQuery ? "Try clearing your search query." : "Calls you make will automatically appear in this history timeline."}
+                  </p>
+                </div>
+              </div>
+            ) : (
               <div className="space-y-2.5">
-                {todayActivities.map((act) => {
-                  const callTime = new Date(act.occurred_at).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-
-                  return (
-                    <div
-                      key={act.id}
-                      className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-2.5 hover:border-zinc-700 transition-all shadow-sm"
-                    >
-                      {/* Top row: Business Name & Outcome Badge */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-1.5 py-0.2 text-[9px] uppercase font-bold font-mono rounded bg-zinc-800 text-emerald-400 border border-zinc-700">
-                              {act.lead?.tier || "Tier U"}
-                            </span>
-                            <h4 className="text-sm font-bold text-zinc-100 truncate">
-                              {act.lead?.name || "Business"}
-                            </h4>
-                          </div>
-                          <div className="text-[11px] text-zinc-400 flex items-center gap-2 mt-0.5">
-                            <span>{act.lead?.area || "Unspecified Area"}</span>
-                            <span>•</span>
-                            <span className="font-mono">{act.lead?.phone || "No phone"}</span>
-                          </div>
+                {filteredActivities.map((act) => (
+                  <div
+                    key={act.id}
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-2.5 hover:border-zinc-700 transition-all shadow-sm"
+                  >
+                    {/* Top row: Business Name & Outcome Badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.2 text-[9px] uppercase font-bold font-mono rounded bg-zinc-800 text-emerald-400 border border-zinc-700">
+                            {act.lead?.tier || "Tier U"}
+                          </span>
+                          <h4 className="text-sm font-bold text-zinc-100 truncate">
+                            {act.lead?.name || "Business"}
+                          </h4>
                         </div>
-
-                        <span
-                          className={`px-2 py-0.5 text-[10px] rounded-full border uppercase font-mono shrink-0 ${getDispositionBadgeStyle(
-                            act.disposition
-                          )}`}
-                        >
-                          {act.disposition.replace("_", " ")}
-                        </span>
-                      </div>
-
-                      {/* Middle row: Time, Duration, and Next Action */}
-                      <div className="flex items-center justify-between text-xs font-mono bg-zinc-950/80 px-2.5 py-1.5 rounded-lg border border-zinc-800/80 text-zinc-400">
-                        <div className="flex items-center gap-2">
-                          <span className="text-zinc-300 font-semibold">{callTime}</span>
+                        <div className="text-[11px] text-zinc-400 flex items-center gap-2 mt-0.5">
+                          <span>{act.lead?.area || "Unspecified Area"}</span>
                           <span>•</span>
-                          <span>Duration: {act.duration_sec}s</span>
+                          <span className="font-mono">{act.lead?.phone || "No phone"}</span>
                         </div>
-
-                        {act.lead?.next_action_at && (
-                          <span className="text-sky-300 font-sans text-[11px] truncate max-w-[150px]">
-                            📅 {formatScheduledTime(act.lead.next_action_at)}
-                          </span>
-                        )}
                       </div>
 
-                      {/* Note snippet if recorded */}
-                      {act.note && (
-                        <div className="text-xs bg-zinc-950 p-2.5 rounded-lg border border-zinc-800/90 text-zinc-300 leading-relaxed">
-                          <span className="text-zinc-500 font-mono text-[10px] block mb-0.5">
-                            Call Note:
-                          </span>
-                          "{act.note}"
-                        </div>
+                      <span
+                        className={`px-2 py-0.5 text-[10px] rounded-full border uppercase font-mono shrink-0 ${getDispositionBadgeStyle(
+                          act.disposition
+                        )}`}
+                      >
+                        {act.disposition.replace("_", " ")}
+                      </span>
+                    </div>
+
+                    {/* Middle row: Time, Duration, and Next Action */}
+                    <div className="flex items-center justify-between text-xs font-mono bg-zinc-950/80 px-2.5 py-1.5 rounded-lg border border-zinc-800/80 text-zinc-400">
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-300 font-semibold">{formatActivityTimestamp(act.occurred_at)}</span>
+                        <span>•</span>
+                        <span>{act.duration_sec}s</span>
+                      </div>
+
+                      {act.lead?.next_action_at && (
+                        <span className="text-sky-300 font-sans text-[11px] truncate max-w-[150px]">
+                          📅 {formatScheduledTime(act.lead.next_action_at)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Note snippet if recorded */}
+                    {act.note && (
+                      <div className="text-xs bg-zinc-950 p-2.5 rounded-lg border border-zinc-800/90 text-zinc-300 leading-relaxed">
+                        <span className="text-zinc-500 font-mono text-[10px] block mb-0.5">
+                          Call Note:
+                        </span>
+                        "{act.note}"
+                      </div>
+                    )}
+
+                    {/* Quick Actions */}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/60">
+                      {act.lead ? (
+                        <a
+                          href={getGmbUrl(act.lead)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 hover:underline font-medium"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          <span>Google Business Profile</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      ) : (
+                        <div />
                       )}
 
-                      {/* Quick Actions */}
-                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/60">
-                        {act.lead ? (
-                          <a
-                            href={getGmbUrl(act.lead)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 hover:underline"
-                          >
-                            <MapPin className="w-3 h-3" />
-                            <span>Google Business Profile</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        ) : (
-                          <div />
-                        )}
-
-                        {act.lead && (
-                          <Button
-                            size="sm"
-                            onClick={() => act.lead && handleStartCall(act.lead)}
-                            className="h-7 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold rounded-lg"
-                          >
-                            <Phone className="w-3 h-3 mr-1 text-emerald-400" /> Call Again
-                          </Button>
-                        )}
-                      </div>
+                      {act.lead && (
+                        <Button
+                          size="sm"
+                          onClick={() => act.lead && handleStartCall(act.lead)}
+                          className="h-7 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold rounded-lg"
+                        >
+                          <Phone className="w-3 h-3 mr-1 text-emerald-400" /> Call Again
+                        </Button>
+                      )}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
-            </div>
-          )
+            )}
+          </div>
         )}
       </div>
 
@@ -905,6 +1105,7 @@ function TodayQueuePageContent() {
           }}
           currentIndex={activeLeadIndex + 1}
           totalInQueue={activeQueueList.length}
+          onDispositionSaved={handleLeadDispositionRecorded}
           onNextLead={() => {
             if (activeLeadIndex + 1 < activeQueueList.length) {
               const nextIdx = activeLeadIndex + 1;
