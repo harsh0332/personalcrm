@@ -195,6 +195,15 @@ function TodayQueuePageContent() {
           return;
         }
 
+        const rLower = (item.reason || "").toLowerCase();
+        if (
+          rLower.includes("not interested") ||
+          rLower.includes("wrong number") ||
+          rLower.includes("do not call")
+        ) {
+          return;
+        }
+
         const qItem: FollowupQueueItem = {
           followupId: item.id,
           dueAt: item.due_at,

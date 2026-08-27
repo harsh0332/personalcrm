@@ -70,6 +70,7 @@ export function DispositionSheet({
   useEffect(() => {
     if (isOpen) {
       setDurationSec(initialDurationSec);
+      setNote(""); // ALWAYS start with a clean empty note for every lead
       setErrorMsg(null);
       setSelectedDispCode(null);
       setSaving(false);
@@ -142,11 +143,21 @@ export function DispositionSheet({
       const ownerId = user?.id;
       const nowIso = new Date().toISOString();
 
-      let targetFollowUpDate: string | null = null;
-      if (customDate) {
-        targetFollowUpDate = customDate;
+      const isActionableFollowup =
+        disp.code === "busy_callback" ||
+        disp.code === "meeting_fixed" ||
+        disp.code === "interested" ||
+        disp.code === "quote_sent" ||
+        disp.code === "no_answer";
+
+      let nextActionAt: string | null = null;
+      if (isActionableFollowup) {
+        if (disp.code === "busy_callback" || disp.code === "meeting_fixed") {
+          nextActionAt = calculateNextActionAt(null, customDate, customTime);
+        } else {
+          nextActionAt = calculateNextActionAt(disp.follow_up_days, null, null);
+        }
       }
-      const nextActionAt = calculateNextActionAt(disp.follow_up_days, targetFollowUpDate, customTime);
 
       // Check 3 No-Answer Parked Guardrail
       let noAnswerCount = 0;
@@ -160,8 +171,17 @@ export function DispositionSheet({
         noAnswerCount = (noAnsActs?.length || 0) + 1;
       }
 
-      const shouldPark = disp.code === "no_answer" && noAnswerCount >= 3;
-      const finalNextStatus = shouldPark ? "parked" : disp.next_status;
+      let finalNextStatus = disp.next_status;
+      if (disp.code === "no_answer" && noAnswerCount >= 3) {
+        finalNextStatus = "parked";
+      } else if (disp.code === "not_interested" || disp.code === "already_has") {
+        finalNextStatus = "lost";
+      } else if (disp.code === "wrong_number") {
+        finalNextStatus = "invalid";
+      } else if (disp.code === "do_not_call") {
+        finalNextStatus = "lost";
+      }
+      const shouldPark = finalNextStatus === "parked";
 
       // EXPIRED SESSION OR OFFLINE SAFETY: Save input safely into Phase 8 IndexedDB queue
       if (!user || userErr || (typeof window !== "undefined" && !navigator.onLine)) {
@@ -229,16 +249,16 @@ export function DispositionSheet({
         attempts: currentAttempts + 1,
         last_called_at: nowIso,
         updated_at: nowIso,
+        next_action_at: nextActionAt,
       };
 
       if (finalNextStatus) {
         leadUpdatePayload.status = finalNextStatus;
       }
-      if (disp.sets_dnc) {
+      if (disp.sets_dnc || disp.code === "do_not_call") {
         leadUpdatePayload.do_not_call = true;
         leadUpdatePayload.status = "lost";
       }
-      leadUpdatePayload.next_action_at = nextActionAt || null;
 
       const { error: leadErr } = await supabase
         .from("leads")
@@ -251,8 +271,8 @@ export function DispositionSheet({
         return;
       }
 
-      // 3. INSERT into followups table (due_at, reason)
-      if (nextActionAt) {
+      // 3. ONLY INSERT into followups table if isActionableFollowup AND nextActionAt is truthy
+      if (isActionableFollowup && nextActionAt) {
         const followupReason = note.trim() || `Followup for ${disp.label}`;
         await supabase.from("followups").insert({
           owner: ownerId,
